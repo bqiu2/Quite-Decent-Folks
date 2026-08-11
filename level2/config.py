@@ -1,0 +1,48 @@
+"""Configuration values for the second level."""
+
+from shared_game_data import LEVEL2_LANE_COUNT
+
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+FPS = 60
+
+LANE_COUNT = LEVEL2_LANE_COUNT
+BATTLEFIELD_TOP = 120
+BATTLEFIELD_BOTTOM = 670
+LANE_HEIGHT = (BATTLEFIELD_BOTTOM - BATTLEFIELD_TOP) // LANE_COUNT
+
+HOUSE_WIDTH = 155
+PLANT_X = 205
+PLANT_SIZE = 68
+
+PROJECTILE_SPEED = 620.0
+PROJECTILE_DAMAGE = 20.0
+ATTACK_COOLDOWN = 0.55
+
+ZOMBIE_SIZE = (72, 84)
+ZOMBIE_SPEED = 46.0
+ZOMBIE_HEALTH = 60.0
+ZOMBIE_SPAWN_X = WINDOW_WIDTH + 45
+ZOMBIE_GOAL_X = HOUSE_WIDTH - 5
+
+WAVE_COUNTS = (6, 10)
+SPAWN_INTERVAL = 0.9
+WAVE_INTERMISSION = 2.5
+
+BACKGROUND_COLOR = (39, 84, 61)
+LANE_COLORS = ((103, 159, 91), (92, 148, 82))
+LANE_LINE_COLOR = (217, 224, 176)
+HOUSE_COLOR = (197, 151, 92)
+HOUSE_ROOF_COLOR = (118, 69, 55)
+RAIL_COLOR = (81, 67, 54)
+HUD_COLOR = (28, 52, 40)
+TEXT_COLOR = (246, 241, 211)
+PROJECTILE_COLOR = (250, 210, 72)
+
+
+def lane_center_y(lane_index: int) -> int:
+    """Return the vertical centre of a lane numbered from zero."""
+    if not 0 <= lane_index < LANE_COUNT:
+        raise ValueError(f"lane_index must be between 0 and {LANE_COUNT - 1}")
+
+    return BATTLEFIELD_TOP + lane_index * LANE_HEIGHT + LANE_HEIGHT // 2
