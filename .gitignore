@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Downloaded by setup/download_hand_model.ps1.
+assets/models/*.task
+!assets/models/.gitkeep
