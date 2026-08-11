@@ -32,6 +32,8 @@ Pillow==12.3.0
 # 植物 AI - SigLIP2
 # ==============================
 
-torch
-transformers
-safetensors
+torch==2.13.0
+transformers==5.15.0
+safetensors==0.8.0
+
+open_clip_torch==3.3.0
