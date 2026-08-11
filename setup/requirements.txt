@@ -1,0 +1,37 @@
+# Plant Game - 三人统一 Python 依赖
+# 统一 Python 版本：Python 3.12.13
+#
+# 重要：
+# 1. 不要同时安装 opencv-python / opencv-python-headless /
+#    opencv-contrib-python-headless。
+# 2. 本项目统一使用 opencv-contrib-python，因为 MediaPipe 会使用 OpenCV，
+#    且 contrib 包已经包含主 OpenCV 模块，import 名仍然是 cv2。
+# 3. hand_landmarker.task / pose_landmarker.task 等 .task 文件属于模型资源，
+#    不属于 pip 包，需要单独放进项目 assets/models/ 中。
+# ==============================
+# 游戏
+# ==============================
+
+pygame==2.6.1
+
+# ==============================
+# MediaPipe / 摄像头
+# ==============================
+
+mediapipe==0.10.35
+opencv-contrib-python==4.11.0.86
+numpy==1.26.4
+
+# ==============================
+# 图片
+# ==============================
+
+Pillow==12.3.0
+
+# ==============================
+# 植物 AI - SigLIP2
+# ==============================
+
+torch
+transformers
+safetensors

@@ -1,0 +1,20 @@
+# setup_environment.ps1
+# Windows PowerShell：创建并安装三人统一 Conda 环境
+
+# 1. 创建环境
+conda create -n plant-game python=3.12.13 -y
+
+# 2. 激活环境
+conda activate plant-game
+
+# 3. 升级 pip
+python -m pip install --upgrade pip
+
+# 4. 如果之前装过不同 OpenCV 版本，先全部清理，避免 cv2 命名空间冲突
+python -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless
+
+# 5. 安装项目统一依赖
+python -m pip install -r requirements.txt
+
+# 6. 检查环境
+python check_environment.py
