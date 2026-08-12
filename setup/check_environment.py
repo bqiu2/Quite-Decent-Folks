@@ -28,6 +28,7 @@ EXPECTED = {
     "opencv-contrib-python": "4.11.0.86",
     "numpy": "1.26.4",
     "Pillow": "12.3.0",
+    "ipykernel": "7.3.0",
 }
 
 EXPECTED_PYTHON = (3, 12, 13)
@@ -133,24 +134,32 @@ def check_camera() -> bool:
     try:
         import cv2
 
-        # Windows 下优先使用 DirectShow，可以减少部分摄像头打开慢的问题。
+        backends = [("默认后端", cv2.CAP_ANY)]
         if sys.platform.startswith("win"):
-            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            backends = [
+                ("DirectShow", cv2.CAP_DSHOW),
+                ("Media Foundation", cv2.CAP_MSMF),
+                ("默认后端", cv2.CAP_ANY),
+            ]
+
+        found = None
+        for index in range(4):
+            for backend_name, backend in backends:
+                cap = cv2.VideoCapture(index, backend)
+                opened = cap.isOpened()
+                ok, _ = cap.read() if opened else (False, None)
+                if opened and ok:
+                    found = (index, backend_name)
+                    cap.release()
+                    break
+                cap.release()
+            if found is not None:
+                break
+
+        if found is not None:
+            print(f"OK     摄像头 {found[0]} 可通过 {found[1]} 打开并读取画面")
         else:
-            cap = cv2.VideoCapture(0)
-
-        opened = cap.isOpened()
-
-        if opened:
-            ok, _ = cap.read()
-            if ok:
-                print("OK     摄像头 0 可以打开并读取画面")
-            else:
-                print("WARN   摄像头能打开，但没有读取到画面")
-        else:
-            print("WARN   无法打开摄像头 0；如果正在被 OBS/浏览器占用也可能出现此情况")
-
-        cap.release()
+            print("WARN   使用索引 0~3 和可用后端均未找到可读取的摄像头")
 
         # 摄像头不可用不代表 Python 环境版本错误，因此不作为硬失败。
         return True
