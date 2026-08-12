@@ -81,20 +81,80 @@ class Level2Game:
         """Run the game and return the result required by shared_game_data."""
         frame_count = 0
 
-        while self.running:
-            dt = self.clock.tick(FPS) / 1000.0
-            self._handle_events()
-            self._update(dt)
-            self._draw()
-            pygame.display.flip()
+        if max_frames is None and self._tutorial_enabled() and not self._show_start_tutorial():
+            self.running = False
 
-            frame_count += 1
-            if max_frames is not None and frame_count >= max_frames:
-                self.running = False
+        try:
+            while self.running:
+                dt = self.clock.tick(FPS) / 1000.0
+                self._handle_events()
+                self._update(dt)
+                self._draw()
+                pygame.display.flip()
 
-        self.hand_controller.close()
-        pygame.quit()
+                frame_count += 1
+                if max_frames is not None and frame_count >= max_frames:
+                    self.running = False
+        finally:
+            self.hand_controller.close()
+            pygame.quit()
         return self._build_result()
+
+    @staticmethod
+    def _tutorial_enabled() -> bool:
+        return os.environ.get("PLANT_GAME_SKIP_TUTORIAL") not in {"1", "true", "TRUE"}
+
+    def _show_start_tutorial(self) -> bool:
+        """Show Level 2 controls before the first wave starts."""
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        return True
+                    if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                        return False
+
+            self._draw()
+            overlay = pygame.Surface((820, 210), pygame.SRCALPHA)
+            overlay.fill((12, 25, 19, 232))
+            pygame.draw.rect(
+                overlay,
+                (126, 235, 176),
+                overlay.get_rect(),
+                3,
+                border_radius=12,
+            )
+            title = self.font.render("LEVEL 2  |  PLANT GUARDIAN", True, (255, 222, 96))
+            body = self.small_font.render(
+                "W/S or arrow keys move between rails. Press H to enable hand control.",
+                True,
+                TEXT_COLOR,
+            )
+            hint = self.small_font.render(
+                "Destroy both zombie waves before they reach the house.",
+                True,
+                (181, 224, 205),
+            )
+            start = self.small_font.render(
+                "Press ENTER or SPACE to start  |  ESC to quit",
+                True,
+                (255, 220, 92),
+            )
+            overlay.blit(title, (24, 24))
+            overlay.blit(body, (24, 78))
+            overlay.blit(hint, (24, 112))
+            overlay.blit(start, (24, 166))
+            self.screen.blit(
+                overlay,
+                (
+                    WINDOW_WIDTH // 2 - overlay.get_width() // 2,
+                    WINDOW_HEIGHT // 2 - overlay.get_height() // 2,
+                ),
+            )
+            pygame.display.flip()
+            self.clock.tick(30)
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():

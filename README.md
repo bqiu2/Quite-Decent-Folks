@@ -1,6 +1,25 @@
 # Quite-Decent-Folks
 This is a game of plants
 
+## Run the complete game
+
+The end-to-end launcher connects plant analysis, Level 1, Level 2, and final
+score saving:
+
+```powershell
+python main.py path\to\plant.jpg
+```
+
+With no image path, the launcher opens a file picker. For a model-free demo:
+
+```powershell
+python main.py --demo --difficulty normal
+```
+
+Useful development options are `--device cpu`, `--no-camera`, `--no-wait`, and
+`--output data\my_result.json`. The final result is saved as JSON under `data/`
+by default.
+
 plant_game/
 │
 ├── main.py

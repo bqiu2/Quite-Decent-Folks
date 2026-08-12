@@ -18,8 +18,8 @@ BioCLIP 植物类型分类 + shared_game_data.PlantData 统一输出。
 
 from __future__ import annotations
 
-from itertools import count
 from pathlib import Path
+import threading
 
 import torch
 
@@ -174,22 +174,22 @@ class PlantAnalyzer:
         }
 
 
-_ANALYZER = None
+_ANALYZERS: dict[str, PlantAnalyzer] = {}
+_ANALYZER_LOCK = threading.Lock()
+_COUNTER_PATH = Path(__file__).resolve().parents[1] / "data" / "plant_id_counter.txt"
+_FALLBACK_COUNTER = 0
+_COUNTER_LOCK = threading.Lock()
 
 # 当前进程内简单生成：
 # PLANT_0001, PLANT_0002, ...
-_PLANT_COUNTER = count(1)
-
-
 def get_plant_analyzer(device=None):
-    global _ANALYZER
-
-    if _ANALYZER is None:
-        _ANALYZER = PlantAnalyzer(
-            device=device
-        )
-
-    return _ANALYZER
+    key = str(device or "default")
+    with _ANALYZER_LOCK:
+        analyzer = _ANALYZERS.get(key)
+        if analyzer is None:
+            analyzer = PlantAnalyzer(device=device)
+            _ANALYZERS[key] = analyzer
+        return analyzer
 
 
 def classify_plant(image, device=None):
@@ -203,7 +203,30 @@ def classify_plant(image, device=None):
 
 
 def _new_plant_id() -> str:
-    return f"PLANT_{next(_PLANT_COUNTER):04d}"
+    """Allocate a plant ID that remains unique across application launches."""
+    global _FALLBACK_COUNTER
+
+    with _COUNTER_LOCK:
+        try:
+            # The file stores the next available number, so the checked-in
+            # initial value ``1`` produces the first ID ``PLANT_0001``.
+            current = int(_COUNTER_PATH.read_text(encoding="utf-8").strip() or "1")
+        except (OSError, ValueError):
+            current = max(1, _FALLBACK_COUNTER + 1)
+
+        next_value = max(1, current, _FALLBACK_COUNTER + 1)
+        try:
+            _COUNTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path = _COUNTER_PATH.with_suffix(".tmp")
+            temporary_path.write_text(str(next_value + 1), encoding="utf-8")
+            temporary_path.replace(_COUNTER_PATH)
+        except OSError:
+            # A read-only installation can still run; uniqueness is retained
+            # for the lifetime of this process via the fallback counter.
+            pass
+        _FALLBACK_COUNTER = next_value
+
+    return f"PLANT_{next_value:04d}"
 
 
 def analyze_plant(

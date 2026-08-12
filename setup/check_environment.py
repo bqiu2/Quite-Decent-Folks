@@ -29,6 +29,10 @@ EXPECTED = {
     "numpy": "1.26.4",
     "Pillow": "12.3.0",
     "ipykernel": "7.3.0",
+    "torch": "2.13.0",
+    "transformers": "5.15.0",
+    "safetensors": "0.8.0",
+    "open_clip_torch": "3.3.0",
 }
 
 EXPECTED_PYTHON = (3, 12, 13)
@@ -169,7 +173,7 @@ def check_camera() -> bool:
         return True
 
 
-def main() -> None:
+def main() -> int:
     results = [
         check_python(),
         check_packages(),
@@ -185,7 +189,8 @@ def main() -> None:
         print("环境检查未通过：请按照 requirements.txt 重新安装环境。")
 
     print("=" * 64)
+    return 0 if all(results) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

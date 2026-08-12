@@ -43,6 +43,7 @@ shared_game_data.py
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Literal
 import json
 
@@ -832,7 +833,9 @@ def save_game_result(result: FinalResult, file_path: str) -> None:
     ensure_ascii=False：
         后续即使 JSON 中加入中文，也不会变成 Unicode 转义。
     """
-    with open(file_path, "w", encoding="utf-8") as f:
+    output_path = Path(file_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(
             asdict(result),
             f,

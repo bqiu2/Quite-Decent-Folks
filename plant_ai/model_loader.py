@@ -38,7 +38,7 @@ class BioCLIPBundle:
     device: str
 
 
-_MODEL_BUNDLE = None
+_MODEL_BUNDLES: dict[str, BioCLIPBundle] = {}
 
 
 def download_bioclip_model():
@@ -119,17 +119,16 @@ def load_bioclip(device=None, allow_download=True):
 
     本地模型存在后，本函数不会访问 Hugging Face。
     """
-    global _MODEL_BUNDLE
-
-    if _MODEL_BUNDLE is not None:
-        return _MODEL_BUNDLE
-
     selected_device = device or DEFAULT_DEVICE
 
     if selected_device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError(
             "CUDA was requested, but torch.cuda.is_available() returned False."
         )
+
+    cached_bundle = _MODEL_BUNDLES.get(str(selected_device))
+    if cached_bundle is not None:
+        return cached_bundle
 
     model_path = ensure_local_model(
         allow_download=allow_download
@@ -157,18 +156,19 @@ def load_bioclip(device=None, allow_download=True):
     model = model.to(selected_device)
     model.eval()
 
-    _MODEL_BUNDLE = BioCLIPBundle(
+    bundle = BioCLIPBundle(
         model=model,
         preprocess=preprocess,
         tokenizer=tokenizer,
         device=selected_device,
     )
+    _MODEL_BUNDLES[str(selected_device)] = bundle
 
     if VERBOSE:
         print("BioCLIP loaded successfully from local storage.")
         print("=" * 60)
 
-    return _MODEL_BUNDLE
+    return bundle
 
 
 def get_bioclip(device=None, allow_download=True):

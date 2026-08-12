@@ -451,6 +451,18 @@ def run_level1(
 
     clock = pygame.time.Clock()
     game = Level1Game(plant)
+
+    # Give a first-time player a short chance to check the controls.  The
+    # headless/surface-injected path intentionally skips this modal screen so
+    # it remains usable by automated callers without a display.
+    if owns_display and _tutorial_enabled() and pygame.display.get_surface() is not None:
+        if not _show_level1_tutorial(screen):
+            game.abort()
+            result = game.make_result()
+            if owns_display:
+                pygame.display.quit()
+            return result
+
     audio = AudioManager()
     audio.start_music()
     camera_input = (
@@ -493,7 +505,10 @@ def run_level1(
                     audio.play_hurt()
             game.draw(screen)
             _draw_camera_overlay(screen, camera_input, use_camera)
-            pygame.display.flip()
+            # ``screen`` may be an off-screen Surface supplied by a test or a
+            # host application.  Only flip when Pygame owns an actual display.
+            if pygame.display.get_surface() is not None:
+                pygame.display.flip()
     finally:
         audio.close()
         if camera_input is not None:
@@ -503,6 +518,49 @@ def run_level1(
     if owns_display:
         pygame.display.quit()
     return result
+
+
+def _tutorial_enabled() -> bool:
+    """Return whether interactive pre-level instructions should be shown."""
+    import os
+
+    return os.environ.get("PLANT_GAME_SKIP_TUTORIAL") not in {"1", "true", "TRUE"}
+
+
+def _show_level1_tutorial(surface: pygame.Surface) -> bool:
+    """Show Level 1 controls and wait for Enter/Space or Escape."""
+    clock = pygame.time.Clock()
+    title_font = pygame.font.Font(None, 42)
+    body_font = pygame.font.Font(None, 27)
+    lines = (
+        "LEVEL 1  |  PLANT RUNNER",
+        "UP / raise only left hand: jump",
+        "DOWN / raise only right hand: slide",
+        "Collect the elements your plant needs; avoid pests.",
+        "Press ENTER or SPACE to start  |  ESC to quit",
+    )
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    return True
+                if event.key == pygame.K_ESCAPE:
+                    return False
+
+        surface.fill((28, 38, 43))
+        panel = pygame.Rect(75, 92, 650, 390)
+        pygame.draw.rect(surface, (54, 76, 73), panel, border_radius=12)
+        pygame.draw.rect(surface, (244, 198, 75), panel, width=3, border_radius=12)
+        for index, line in enumerate(lines):
+            font = title_font if index == 0 else body_font
+            color = (255, 220, 112) if index == 0 else (244, 241, 225)
+            text = font.render(line, True, color)
+            surface.blit(text, text.get_rect(center=(400, 150 + index * 56)))
+        pygame.display.flip()
+        clock.tick(30)
 
 
 def _draw_camera_overlay(

@@ -27,6 +27,7 @@ BioCLIP 这里只判断 RGB 图片中的可见症状，
 from __future__ import annotations
 
 import random
+import threading
 from typing import Any
 
 import torch
@@ -566,20 +567,20 @@ class HealthAnalyzer:
         }
 
 
-_HEALTH_ANALYZER: HealthAnalyzer | None = None
+_HEALTH_ANALYZERS: dict[str, HealthAnalyzer] = {}
+_HEALTH_ANALYZER_LOCK = threading.Lock()
 
 
 def get_health_analyzer(
     device: str | None = None,
 ) -> HealthAnalyzer:
-    global _HEALTH_ANALYZER
-
-    if _HEALTH_ANALYZER is None:
-        _HEALTH_ANALYZER = HealthAnalyzer(
-            device=device
-        )
-
-    return _HEALTH_ANALYZER
+    key = str(device or "default")
+    with _HEALTH_ANALYZER_LOCK:
+        analyzer = _HEALTH_ANALYZERS.get(key)
+        if analyzer is None:
+            analyzer = HealthAnalyzer(device=device)
+            _HEALTH_ANALYZERS[key] = analyzer
+        return analyzer
 
 
 def analyze_health(
