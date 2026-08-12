@@ -3,6 +3,7 @@
 import pygame
 
 from .config import LANE_COUNT, PLANT_SIZE, PLANT_X, lane_center_y
+from ui.pixel_style import draw_pixel_plant
 
 
 class PlantPlayer(pygame.sprite.Sprite):
@@ -46,49 +47,12 @@ class PlantPlayer(pygame.sprite.Sprite):
         """Create an original code-drawn sprite for the detected plant type."""
         surface = self.image
         surface.fill((0, 0, 0, 0))
-
-        pot = pygame.Rect(0, 0, 36, 26)
-        pot.midbottom = (PLANT_SIZE // 2, PLANT_SIZE)
-        pygame.draw.rect(surface, (140, 82, 48), pot)
-        pygame.draw.rect(surface, (91, 54, 38), pot, 4)
-        pygame.draw.line(surface, (201, 126, 69), (pot.left + 5, pot.top + 6), (pot.right - 5, pot.top + 6), 3)
-
-        if self.plant_type == "grass":
-            for offset, height in ((-17, 28), (-9, 36), (0, 43), (9, 35), (17, 27)):
-                start = (PLANT_SIZE // 2 + offset, pot.top + 3)
-                end = (PLANT_SIZE // 2 + offset // 2, pot.top + 3 - height)
-                pygame.draw.line(surface, (54, 150, 68), start, end, 7)
-                pygame.draw.line(surface, (116, 203, 91), start, end, 2)
-            return
-
-        if self.plant_type == "shrub":
-            for center, radius in (((22, 30), 15), ((45, 30), 16), ((34, 18), 18)):
-                pygame.draw.circle(surface, (46, 124, 64), center, radius)
-                pygame.draw.circle(surface, (91, 173, 78), (center[0] - 4, center[1] - 4), max(4, radius // 3))
-            return
-
-        # Flower art.
-        pygame.draw.ellipse(surface, (58, 139, 70), (8, 29, 29, 17))
-        pygame.draw.ellipse(surface, (42, 111, 61), (33, 31, 29, 17))
-        stem_start = (PLANT_SIZE // 2, pot.top)
-        stem_end = (PLANT_SIZE // 2, 20)
-        pygame.draw.line(surface, (48, 116, 55), stem_start, stem_end, 8)
-
-        flower_center = (PLANT_SIZE // 2, 18)
-        petal_color = (247, 191, 80)
-        for offset_x, offset_y in ((0, -12), (12, 0), (0, 12), (-12, 0)):
-            pygame.draw.circle(
-                surface,
-                petal_color,
-                (flower_center[0] + offset_x, flower_center[1] + offset_y),
-                10,
-            )
-        pygame.draw.circle(surface, (111, 71, 42), flower_center, 9)
-        pygame.draw.circle(surface, (255, 226, 116), (flower_center[0] - 3, flower_center[1] - 3), 3)
+        draw_pixel_plant(surface, (PLANT_SIZE // 2, 43), self.plant_type, scale=1)
 
     def draw(self, surface: pygame.Surface) -> None:
         """Draw the plant at its current lane position."""
-        shadow = pygame.Rect(0, 0, 54, 14)
+        shadow = pygame.Rect(0, 0, 54, 10)
         shadow.center = (self.rect.centerx, self.rect.bottom - 2)
-        pygame.draw.ellipse(surface, (43, 73, 49), shadow)
+        pygame.draw.rect(surface, (43, 73, 49), shadow)
+        pygame.draw.rect(surface, (66, 105, 62), shadow.inflate(-12, -5))
         surface.blit(self.image, self.rect)

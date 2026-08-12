@@ -50,13 +50,15 @@ class Projectile(pygame.sprite.Sprite):
         if attack_name == "sword_wave":
             pygame.draw.polygon(
                 self.image,
-                (174, 241, 226),
-                ((0, 8), (19, 1), (31, 8), (19, 15)),
+                (55, 113, 117),
+                ((0, 9), (18, 0), (31, 8), (18, 16)),
             )
-            pygame.draw.line(self.image, (245, 255, 250), (8, 8), (26, 8), 3)
+            pygame.draw.polygon(self.image, (174, 241, 226), ((4, 8), (19, 3), (27, 8), (18, 13)))
+            pygame.draw.rect(self.image, (245, 255, 250), (8, 7, 17, 3))
         elif attack_name == "earthquake":
-            pygame.draw.ellipse(self.image, (157, 111, 71), (0, 4, 32, 10))
-            pygame.draw.line(self.image, (234, 194, 112), (4, 8), (28, 8), 3)
+            pygame.draw.polygon(self.image, (88, 65, 52), ((0, 11), (5, 5), (10, 10), (16, 2), (22, 10), (28, 4), (32, 11), (32, 15), (0, 15)))
+            pygame.draw.polygon(self.image, (157, 111, 71), ((2, 10), (7, 7), (11, 11), (16, 5), (22, 11), (27, 7), (30, 11), (30, 13), (2, 13)))
+            pygame.draw.rect(self.image, (234, 194, 112), (5, 9, 22, 3))
         else:
             pygame.draw.polygon(
                 self.image,

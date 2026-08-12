@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 import sys
 from unittest.mock import patch
 
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
+import pygame
+
 from main import _parse_args
+from level1.demo_data import create_demo_plant
+from level1.level1 import Level1Game
 from plant_ai import plant_analyzer
 from shared_game_data import FinalResult, save_game_result
+from ui.pixel_style import draw_status_hexagon
 
 
 class MainFlowTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        pygame.quit()
+
     def test_demo_and_runtime_options_parse(self) -> None:
         with patch.object(
             sys,
@@ -59,6 +71,15 @@ class MainFlowTests(unittest.TestCase):
             self.assertEqual(plant_analyzer._new_plant_id(), "PLANT_0003")
         plant_analyzer._COUNTER_PATH = original_path
         plant_analyzer._FALLBACK_COUNTER = original_fallback
+
+    def test_analysis_chart_and_live_level1_panel_render(self) -> None:
+        pygame.init()
+        surface = pygame.Surface((800, 600))
+        plant = create_demo_plant()
+        draw_status_hexagon(surface, (190, 190), 90, plant.status, show_values=True)
+        game = Level1Game(plant)
+        game.draw(surface, status_panel_rect=pygame.Rect(560, 240, 220, 248))
+        self.assertEqual(surface.get_size(), (800, 600))
 
 
 if __name__ == "__main__":

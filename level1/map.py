@@ -137,16 +137,58 @@ class ScrollingMap:
         self.offset = (self.offset + speed * dt) % 80.0
 
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill((210, 235, 238))
-        pygame.draw.rect(surface, (245, 214, 126), (0, 0, WINDOW_WIDTH, 86))
-        pygame.draw.circle(surface, (248, 173, 65), (710, 66), 31)
+        surface.fill((194, 222, 224))
+        pygame.draw.rect(surface, (246, 211, 119), (0, 0, WINDOW_WIDTH, 86))
+
+        # Chunky sun and clouds keep the background pixel-shaped instead of
+        # relying on smooth vector circles.
+        pygame.draw.rect(surface, (248, 173, 65), (695, 42, 48, 48))
+        pygame.draw.rect(surface, (255, 207, 83), (687, 52, 64, 28))
+        for cloud_x, cloud_y in ((96, 98), (382, 132)):
+            pygame.draw.rect(surface, (238, 248, 233), (cloud_x, cloud_y, 74, 15))
+            pygame.draw.rect(surface, (238, 248, 233), (cloud_x + 14, cloud_y - 10, 28, 25))
+            pygame.draw.rect(surface, (238, 248, 233), (cloud_x + 44, cloud_y - 6, 24, 21))
+
+        # Stepped hills and tree silhouettes fill the middle distance so the
+        # runner has a layered landscape instead of a flat strip of sky.
+        for hill_x, hill_width, hill_height in ((-40, 300, 86), (210, 340, 112), (520, 300, 76), (760, 320, 104)):
+            base_y = 255
+            pygame.draw.rect(
+                surface,
+                (139, 184, 157),
+                (hill_x, base_y - hill_height + 18, hill_width, hill_height - 18),
+            )
+            pygame.draw.rect(
+                surface,
+                (139, 184, 157),
+                (hill_x + 32, base_y - hill_height, hill_width - 64, 18),
+            )
+            pygame.draw.rect(
+                surface,
+                (139, 184, 157),
+                (hill_x + 70, base_y - hill_height - 12, hill_width - 140, 12),
+            )
+            pygame.draw.rect(surface, (103, 157, 127), (hill_x, base_y - 5, hill_width, 5))
+
+        # Tiny tree clusters create a clear pixel-art horizon line.
+        for tree_x, tree_y in ((62, 208), (174, 198), (448, 214), (676, 190), (884, 205)):
+            pygame.draw.rect(surface, (92, 76, 54), (tree_x + 11, tree_y + 26, 9, 28))
+            pygame.draw.rect(surface, (51, 113, 74), (tree_x, tree_y + 8, 32, 25))
+            pygame.draw.rect(surface, (69, 139, 81), (tree_x + 7, tree_y, 19, 19))
+            pygame.draw.rect(surface, (132, 187, 92), (tree_x + 10, tree_y + 3, 8, 5))
 
         # Distant city blocks provide readable motion without image assets.
         for index in range(9):
             x = int(index * 120 - (self.offset * 0.22) % 120)
             height = 55 + (index % 3) * 18
-            pygame.draw.rect(surface, (126, 166, 174), (x, 255 - height, 86, height))
-            pygame.draw.rect(surface, (242, 239, 185), (x + 15, 215 - height, 12, 12))
+            pygame.draw.rect(surface, (119, 160, 169), (x, 255 - height, 86, height))
+            pygame.draw.rect(surface, (82, 126, 139), (x + 7, 255 - height, 5, height))
+            for row in range(3):
+                for column in range(3):
+                    window_x = x + 15 + column * 22
+                    window_y = 215 - height + row * 26
+                    pygame.draw.rect(surface, (242, 239, 185), (window_x, window_y, 12, 12))
+                    pygame.draw.rect(surface, (94, 137, 147), (window_x, window_y + 12, 12, 4))
 
         self._draw_floor(surface, LOWER_FLOOR_Y, (56, 91, 73))
 
@@ -165,3 +207,8 @@ class ScrollingMap:
         marker_offset = int(self.offset) % 80
         for x in range(-marker_offset, WINDOW_WIDTH + 80, 80):
             pygame.draw.rect(surface, (151, 198, 113), (x, floor_y + 3, 42, 5))
+            pygame.draw.rect(surface, (42, 76, 57), (x + 50, floor_y + 5, 15, 3))
+            pygame.draw.rect(surface, (42, 76, 57), (x + 55, floor_y + 1, 4, 7))
+            pygame.draw.rect(surface, (185, 211, 112), (x + 20, floor_y + 16, 4, 4))
+            pygame.draw.rect(surface, (74, 128, 70), (x + 22, floor_y + 10, 3, 8))
+            pygame.draw.rect(surface, (235, 180, 77), (x + 25, floor_y + 9, 4, 4))

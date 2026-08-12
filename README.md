@@ -20,6 +20,19 @@ Useful development options are `--device cpu`, `--no-camera`, `--no-wait`, and
 `--output data\my_result.json`. The final result is saved as JSON under `data/`
 by default.
 
+## Pixel-art analysis flow
+
+After the plant image is analyzed, the game pauses on an analysis card showing
+the generated plant ID, plant type, six-dimension health radar, initial battle
+power, and the matching pixel plant form. Press `Enter` or `Space` to start
+Level 1.
+
+Level 1 keeps a live version of the same radar in the upper-right status panel.
+Collecting water, light, nitrogen, phosphorus, or potassium updates the radar
+and current power immediately; the starting power and power delta remain visible
+for comparison. The runner, plant forms, background, collectibles, and HUD use
+the same block-based pixel palette across both levels.
+
 plant_game/
 │
 ├── main.py

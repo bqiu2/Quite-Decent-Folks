@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
-import math
 import random
 
 import pygame
@@ -41,6 +40,15 @@ from .map import Obstacle, ObstacleManager, ScrollingMap
 from .player import Player
 from vision.camera_pose_input import CameraPoseInput
 from vision.pose_control import GestureAction
+from ui.pixel_style import (
+    PALETTE,
+    draw_pixel_backdrop,
+    draw_pixel_panel,
+    draw_pixel_plant,
+    draw_pixel_runner,
+    draw_power_readout,
+    draw_status_hexagon,
+)
 
 
 ActionProvider = Callable[[], PoseAction]
@@ -290,7 +298,12 @@ class Level1Game:
             score=score,
         )
 
-    def draw(self, surface: pygame.Surface) -> None:
+    def draw(
+        self,
+        surface: pygame.Surface,
+        *,
+        status_panel_rect: pygame.Rect | None = None,
+    ) -> None:
         self.world.draw(surface)
         for obstacle in self.obstacles.obstacles:
             self._draw_obstacle(surface, obstacle)
@@ -298,136 +311,128 @@ class Level1Game:
             self._draw_item(surface, item)
         self._draw_player(surface)
         self._draw_hud(surface)
+        if status_panel_rect is not None:
+            self.draw_status_panel(surface, status_panel_rect)
 
     def _draw_obstacle(self, surface: pygame.Surface, obstacle: Obstacle) -> None:
         rect = obstacle.rect
         if obstacle.hit:
-            color = (133, 124, 114)
+            color = (113, 116, 108)
         elif obstacle.kind == "slide":
-            color = (148, 63, 61)
+            color = (143, 63, 67)
         else:
-            color = (104, 69, 50)
+            color = (105, 68, 48)
 
         if obstacle.kind == "slide":
-            pygame.draw.rect(surface, color, rect, border_radius=3)
-            pygame.draw.line(surface, (66, 48, 43), rect.bottomleft, rect.topleft, 5)
-            pygame.draw.line(surface, (66, 48, 43), rect.bottomright, rect.topright, 5)
-            for x in range(rect.left + 10, rect.right, 18):
-                pygame.draw.circle(surface, (238, 178, 63), (x, rect.centery), 4)
+            pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
+            pygame.draw.rect(surface, color, rect)
+            pygame.draw.rect(surface, (235, 136, 91), (rect.left + 4, rect.top + 6, rect.width - 8, 3))
+            pygame.draw.rect(surface, (217, 104, 82), (rect.left, rect.top, rect.width, 6))
+            pygame.draw.rect(surface, (73, 48, 44), (rect.left + 8, rect.top + 6, 7, rect.height - 6))
+            pygame.draw.rect(surface, (73, 48, 44), (rect.right - 15, rect.top + 6, 7, rect.height - 6))
+            for x in range(rect.left + 10, rect.right - 4, 18):
+                pygame.draw.rect(surface, (245, 191, 70), (x, rect.centery - 3, 7, 7))
+                pygame.draw.rect(surface, (255, 226, 126), (x + 2, rect.centery - 2, 3, 3))
             return
 
-        pygame.draw.rect(surface, color, rect, border_radius=3)
+        pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
+        pygame.draw.rect(surface, color, rect)
         stripe = (229, 178, 71)
-        for y in range(rect.top + 9, rect.bottom, 24):
-            pygame.draw.rect(surface, stripe, (rect.left, y, rect.width, 7))
-        pygame.draw.rect(surface, (54, 44, 40), rect, width=3, border_radius=3)
+        for y in range(rect.top + 9, rect.bottom - 5, 24):
+            pygame.draw.rect(surface, stripe, (rect.left + 3, y, rect.width - 6, 7))
+            pygame.draw.rect(surface, (255, 214, 105), (rect.left + 5, y + 1, rect.width - 10, 2))
+            pygame.draw.rect(surface, (92, 56, 42), (rect.left + 3, y + 7, rect.width - 6, 3))
+        pygame.draw.rect(surface, (54, 44, 40), rect, width=3)
+        pygame.draw.rect(surface, (247, 219, 112), (rect.left + 7, rect.top + 4, 7, 5))
 
     def _draw_item(self, surface: pygame.Surface, item: Collectible) -> None:
         rect = item.rect
         center = rect.center
-        pygame.draw.circle(surface, (250, 248, 235), center, 24)
-        pygame.draw.circle(surface, (255, 255, 255), center, 21)
+        # A few square glints make collectible cards feel alive while keeping
+        # every edge hard and readable at native resolution.
+        sparkle = int(self.elapsed * 8 + item.pair_id) % 3
+        for offset_x, offset_y in ((-6, 7 + sparkle), (rect.width + 2, 12 - sparkle)):
+            pygame.draw.rect(surface, PALETTE["gold_light"], (rect.left + offset_x, rect.top + offset_y, 3, 3))
+        pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
+        pygame.draw.rect(surface, (225, 211, 166), rect)
+        pygame.draw.rect(surface, (255, 249, 219), rect.inflate(-4, -4))
+        pygame.draw.rect(surface, (255, 255, 238), (rect.left + 5, rect.top + 5, 7, 3))
+        pygame.draw.rect(surface, (161, 139, 93), (rect.left + 4, rect.bottom - 8, rect.width - 8, 3))
         draw_element_icon(surface, item.element, rect.inflate(-8, -8))
 
     def _draw_player(self, surface: pygame.Surface) -> None:
         if self.player.is_invincible and int(self.player.invincible_remaining * 40) % 2 == 0:
             return
 
-        rect = self.player.rect
-        line_color = (35, 39, 43)
-        skin = (245, 194, 136)
-        phase = self.elapsed * 11.0
-        running_swing = int(math.sin(phase) * 11) if self.player.grounded else 0
-
-        if self.player.crouching:
-            head = (rect.left + 12, rect.top + 9)
-            shoulder = (rect.left + 22, rect.top + 18)
-            hip = (rect.left + 25, rect.top + 28)
-            front_foot = (rect.right - 2, rect.bottom - 2)
-            back_foot = (rect.left + 5, rect.bottom - 2)
-        else:
-            head = (rect.centerx, rect.top + 10)
-            shoulder = (rect.centerx, rect.top + 22)
-            hip = (rect.centerx, rect.top + 48)
-            front_foot = (rect.centerx + running_swing, rect.bottom - 2)
-            back_foot = (rect.centerx - running_swing, rect.bottom - 2)
-
-        pygame.draw.line(surface, line_color, shoulder, hip, 5)
-        pygame.draw.line(surface, line_color, hip, front_foot, 5)
-        pygame.draw.line(surface, line_color, hip, back_foot, 5)
-        pygame.draw.line(
+        draw_pixel_runner(
             surface,
-            line_color,
-            shoulder,
-            (shoulder[0] + 16, shoulder[1] + 15),
-            5,
+            self.player.rect,
+            self.plant.plant_type,
+            running_frame=round(self.elapsed * 8),
+            crouching=self.player.crouching,
         )
-        pygame.draw.line(
-            surface,
-            line_color,
-            shoulder,
-            (shoulder[0] - 13, shoulder[1] + 13),
-            5,
-        )
-        pygame.draw.circle(surface, skin, head, 9)
-        pygame.draw.circle(surface, line_color, head, 9, width=2)
-        self._draw_plant(surface, (shoulder[0] + 16, shoulder[1] + 12))
 
     def _draw_plant(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
-        pot = pygame.Rect(center[0] - 8, center[1] + 1, 16, 11)
-        pygame.draw.rect(surface, (173, 91, 57), pot, border_radius=2)
-        plant_type = self.plant.plant_type
-        if plant_type == "grass":
-            for dx in (-6, -2, 3, 7):
-                pygame.draw.line(
-                    surface, (52, 135, 71), (center[0], center[1] + 2),
-                    (center[0] + dx, center[1] - 12 - abs(dx)), 3,
-                )
-        elif plant_type == "shrub":
-            for dx, dy in ((-6, -2), (0, -7), (7, -2)):
-                pygame.draw.circle(
-                    surface, (54, 137, 72), (center[0] + dx, center[1] + dy), 6
-                )
-        else:
-            pygame.draw.line(
-                surface, (58, 137, 72), (center[0], center[1] + 3),
-                (center[0], center[1] - 8), 3,
-            )
-            for angle in range(0, 360, 72):
-                radians = math.radians(angle)
-                petal = (
-                    round(center[0] + math.cos(radians) * 6),
-                    round(center[1] - 9 + math.sin(radians) * 6),
-                )
-                pygame.draw.circle(surface, (225, 91, 135), petal, 4)
-            pygame.draw.circle(surface, (246, 190, 60), (center[0], center[1] - 9), 3)
+        draw_pixel_plant(surface, center, self.plant.plant_type, scale=1)
 
     def _draw_hud(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, (28, 38, 43), (0, 0, WINDOW_WIDTH, 52))
+        pygame.draw.rect(surface, PALETTE["deep_ink"], (0, 0, WINDOW_WIDTH, 52))
+        pygame.draw.rect(surface, PALETTE["panel"], (0, 4, WINDOW_WIDTH, 44))
+        pygame.draw.rect(surface, PALETTE["panel_light"], (0, 4, WINDOW_WIDTH, 3))
+        pygame.draw.rect(surface, PALETTE["gold"], (0, 49, WINDOW_WIDTH, 3))
         font = pygame.font.Font(None, 27)
         small = pygame.font.Font(None, 21)
         remaining = max(0.0, TIME_LIMIT - self.elapsed)
-        time_text = font.render(f"TIME {remaining:04.1f}", True, (244, 241, 225))
+        time_text = font.render(f"TIME {remaining:04.1f}", False, (244, 241, 225))
         power_text = font.render(
-            f"POWER {self.plant.current_power:05.1f}", True, (244, 241, 225)
+            f"POWER {self.plant.current_power:05.1f}", False, (244, 241, 225)
         )
         surface.blit(time_text, (18, 15))
         surface.blit(power_text, (174, 15))
 
         for index in range(MAX_HP):
             x = 390 + index * 27
-            color = (222, 74, 67) if index < self.player.hp else (80, 83, 82)
-            pygame.draw.circle(surface, color, (x, 23), 8)
-            pygame.draw.circle(surface, color, (x + 9, 23), 8)
-            pygame.draw.polygon(surface, color, ((x - 8, 25), (x + 17, 25), (x + 5, 40)))
+            color = PALETTE["red"] if index < self.player.hp else (80, 83, 82)
+            pygame.draw.rect(surface, color, (x, 16, 9, 9))
+            pygame.draw.rect(surface, color, (x + 9, 16, 9, 9))
+            pygame.draw.rect(surface, color, (x + 3, 24, 12, 9))
+            pygame.draw.rect(surface, PALETTE["gold_light"], (x + 2, 14, 4, 4))
 
         x = 500
         for element in ELEMENT_TYPES:
             icon_rect = pygame.Rect(x - 9, 8, 18, 18)
             draw_element_icon(surface, element, icon_rect)
-            label = small.render(str(self.collected[element]), True, (244, 241, 225))
+            label = small.render(str(self.collected[element]), False, (244, 241, 225))
             surface.blit(label, (x - 5, 31))
             x += 48
+
+    def draw_status_panel(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Draw the live six-axis status radar in the course's open corner."""
+        draw_pixel_panel(
+            surface,
+            rect,
+            fill=PALETTE["panel"],
+            border=PALETTE["gold"],
+            accent=PALETTE["green"],
+        )
+        title_font = pygame.font.Font(None, 20)
+        title = title_font.render("LIVE PLANT STATUS", False, PALETTE["cream"])
+        surface.blit(title, (rect.left + 18, rect.top + 12))
+        pygame.draw.rect(surface, PALETTE["panel_light"], (rect.left + 18, rect.top + 34, rect.width - 36, 2))
+        draw_status_hexagon(
+            surface,
+            (rect.centerx, rect.top + 116),
+            56,
+            self.plant.status,
+            show_labels=True,
+            show_values=False,
+        )
+        draw_power_readout(
+            surface,
+            (rect.left + 18, rect.bottom - 42),
+            self.plant.current_power,
+            self.power_before,
+        )
 
 
 def run_level1(
@@ -503,7 +508,8 @@ def run_level1(
                     audio.play_collect(element)
                 elif event_name == "hurt":
                     audio.play_hurt()
-            game.draw(screen)
+            status_panel_rect = pygame.Rect(568, 246 if use_camera else 62, 222, 248)
+            game.draw(screen, status_panel_rect=status_panel_rect)
             _draw_camera_overlay(screen, camera_input, use_camera)
             # ``screen`` may be an off-screen Surface supplied by a test or a
             # host application.  Only flip when Pygame owns an actual display.
@@ -550,14 +556,22 @@ def _show_level1_tutorial(surface: pygame.Surface) -> bool:
                 if event.key == pygame.K_ESCAPE:
                     return False
 
-        surface.fill((28, 38, 43))
+        draw_pixel_backdrop(surface, base=(177, 209, 199), horizon=540)
+        pygame.draw.rect(surface, (94, 145, 103), (0, 540, WINDOW_WIDTH, 60))
+        for x in range(0, WINDOW_WIDTH, 56):
+            pygame.draw.rect(surface, (137, 185, 103), (x + 8, 540, 25, 4))
         panel = pygame.Rect(75, 92, 650, 390)
-        pygame.draw.rect(surface, (54, 76, 73), panel, border_radius=12)
-        pygame.draw.rect(surface, (244, 198, 75), panel, width=3, border_radius=12)
+        draw_pixel_panel(
+            surface,
+            panel,
+            fill=PALETTE["panel"],
+            border=PALETTE["gold"],
+            accent=PALETTE["green"],
+        )
         for index, line in enumerate(lines):
             font = title_font if index == 0 else body_font
-            color = (255, 220, 112) if index == 0 else (244, 241, 225)
-            text = font.render(line, True, color)
+            color = PALETTE["gold_light"] if index == 0 else PALETTE["cream"]
+            text = font.render(line, False, color)
             surface.blit(text, text.get_rect(center=(400, 150 + index * 56)))
         pygame.display.flip()
         clock.tick(30)

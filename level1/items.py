@@ -57,29 +57,33 @@ def draw_element_icon(
     color = ELEMENT_COLORS[element]
     center_x, center_y = rect.center
     scale = max(0.45, rect.width / 42.0)
+    unit = max(1, round(3 * scale))
 
     if element == "water":
-        radius = max(3, round(8 * scale))
-        pygame.draw.polygon(
-            surface,
-            color,
-            (
-                (center_x, center_y - round(13 * scale)),
-                (center_x - radius, center_y + round(2 * scale)),
-                (center_x + radius, center_y + round(2 * scale)),
-            ),
+        points = (
+            (center_x, center_y - round(13 * scale)),
+            (center_x - round(8 * scale), center_y),
+            (center_x - round(5 * scale), center_y + round(8 * scale)),
+            (center_x + round(6 * scale), center_y + round(8 * scale)),
+            (center_x + round(9 * scale), center_y),
         )
-        pygame.draw.circle(surface, color, (center_x, center_y + round(3 * scale)), radius)
+        pygame.draw.polygon(surface, (31, 75, 113), points)
+        pygame.draw.polygon(surface, color, tuple((x, y - unit) for x, y in points))
+        pygame.draw.rect(surface, (187, 235, 245), (center_x - unit, center_y - round(3 * scale), unit, round(5 * scale)))
         return
 
     if element == "light":
-        radius = max(3, round(7 * scale))
-        pygame.draw.circle(surface, color, rect.center, radius)
         ray = round(13 * scale)
+        pygame.draw.rect(surface, color, (center_x - round(7 * scale), center_y - round(7 * scale), round(14 * scale), round(14 * scale)))
+        pygame.draw.rect(surface, (255, 238, 128), (center_x - round(4 * scale), center_y - round(4 * scale), round(8 * scale), round(8 * scale)))
         for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, -1)):
-            start = (center_x + dx * (radius + 2), center_y + dy * (radius + 2))
-            end = (center_x + dx * ray, center_y + dy * ray)
-            pygame.draw.line(surface, color, start, end, max(1, round(2 * scale)))
+            if dx == 0:
+                ray_rect = (center_x - unit // 2, center_y + dy * ray, unit, round(5 * scale))
+            elif dy == 0:
+                ray_rect = (center_x + dx * ray, center_y - unit // 2, round(5 * scale), unit)
+            else:
+                ray_rect = (center_x + dx * ray - unit // 2, center_y + dy * ray - unit // 2, unit, unit)
+            pygame.draw.rect(surface, color, ray_rect)
         return
 
     if element == "pesticide":
@@ -89,18 +93,18 @@ def draw_element_icon(
             round(14 * scale),
             round(17 * scale),
         )
-        pygame.draw.rect(surface, color, body, border_radius=max(1, round(2 * scale)))
+        pygame.draw.rect(surface, (64, 70, 54), body.move(2, 2))
+        pygame.draw.rect(surface, color, body)
+        pygame.draw.rect(surface, (248, 190, 83), (body.left + unit, body.top + unit, max(unit, body.width // 3), unit))
         pygame.draw.rect(
             surface,
             (46, 55, 55),
             (center_x - round(3 * scale), center_y - round(10 * scale), round(7 * scale), round(5 * scale)),
         )
-        pygame.draw.line(
+        pygame.draw.rect(
             surface,
             (46, 55, 55),
-            (center_x + round(2 * scale), center_y - round(10 * scale)),
-            (center_x + round(10 * scale), center_y - round(12 * scale)),
-            max(1, round(2 * scale)),
+            (center_x + round(4 * scale), center_y - round(11 * scale), round(9 * scale), max(1, round(2 * scale))),
         )
         return
 
