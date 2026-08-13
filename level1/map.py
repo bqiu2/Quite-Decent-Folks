@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 import random
 
 import pygame
@@ -132,65 +133,68 @@ class ObstacleManager:
 class ScrollingMap:
     def __init__(self) -> None:
         self.offset = 0.0
+        self.background = self._load_background()
+
+    @staticmethod
+    def _load_background() -> pygame.Surface | None:
+        """Load the illustrated first-level environment when available."""
+        path = Path(__file__).resolve().parents[1] / "assets" / "level1" / "forest_runner_background.png"
+        try:
+            image = pygame.image.load(str(path))
+            if pygame.display.get_surface() is not None:
+                image = image.convert()
+            else:
+                image = image.copy()
+        except (FileNotFoundError, pygame.error):
+            return None
+
+        source_width, source_height = image.get_size()
+        target_ratio = WINDOW_WIDTH / 600
+        source_ratio = source_width / source_height
+        if source_ratio > target_ratio:
+            crop_width = round(source_height * target_ratio)
+            image = image.subsurface(
+                pygame.Rect((source_width - crop_width) // 2, 0, crop_width, source_height)
+            ).copy()
+        return pygame.transform.scale(image, (WINDOW_WIDTH, 600))
 
     def update(self, dt: float, speed: float) -> None:
         self.offset = (self.offset + speed * dt) % 80.0
 
     def draw(self, surface: pygame.Surface) -> None:
-        surface.fill((194, 222, 224))
-        pygame.draw.rect(surface, (246, 211, 119), (0, 0, WINDOW_WIDTH, 86))
+        if self.background is not None:
+            surface.blit(self.background, (0, 0))
+        else:
+            surface.fill((69, 157, 202))
+            self._draw_fallback_hills(surface)
+        self._draw_playable_floor(surface, LOWER_FLOOR_Y)
 
-        # Chunky sun and clouds keep the background pixel-shaped instead of
-        # relying on smooth vector circles.
-        pygame.draw.rect(surface, (248, 173, 65), (695, 42, 48, 48))
-        pygame.draw.rect(surface, (255, 207, 83), (687, 52, 64, 28))
-        for cloud_x, cloud_y in ((96, 98), (382, 132)):
-            pygame.draw.rect(surface, (238, 248, 233), (cloud_x, cloud_y, 74, 15))
-            pygame.draw.rect(surface, (238, 248, 233), (cloud_x + 14, cloud_y - 10, 28, 25))
-            pygame.draw.rect(surface, (238, 248, 233), (cloud_x + 44, cloud_y - 6, 24, 21))
-
-        # Stepped hills and tree silhouettes fill the middle distance so the
-        # runner has a layered landscape instead of a flat strip of sky.
+    def _draw_fallback_hills(self, surface: pygame.Surface) -> None:
         for hill_x, hill_width, hill_height in ((-40, 300, 86), (210, 340, 112), (520, 300, 76), (760, 320, 104)):
             base_y = 255
-            pygame.draw.rect(
-                surface,
-                (139, 184, 157),
-                (hill_x, base_y - hill_height + 18, hill_width, hill_height - 18),
-            )
-            pygame.draw.rect(
-                surface,
-                (139, 184, 157),
-                (hill_x + 32, base_y - hill_height, hill_width - 64, 18),
-            )
-            pygame.draw.rect(
-                surface,
-                (139, 184, 157),
-                (hill_x + 70, base_y - hill_height - 12, hill_width - 140, 12),
-            )
-            pygame.draw.rect(surface, (103, 157, 127), (hill_x, base_y - 5, hill_width, 5))
+            pygame.draw.rect(surface, (79, 145, 137), (hill_x, base_y - hill_height + 18, hill_width, hill_height - 18))
+            pygame.draw.rect(surface, (79, 145, 137), (hill_x + 32, base_y - hill_height, hill_width - 64, 18))
+            pygame.draw.rect(surface, (47, 111, 104), (hill_x, base_y - 5, hill_width, 5))
 
-        # Tiny tree clusters create a clear pixel-art horizon line.
-        for tree_x, tree_y in ((62, 208), (174, 198), (448, 214), (676, 190), (884, 205)):
-            pygame.draw.rect(surface, (92, 76, 54), (tree_x + 11, tree_y + 26, 9, 28))
-            pygame.draw.rect(surface, (51, 113, 74), (tree_x, tree_y + 8, 32, 25))
-            pygame.draw.rect(surface, (69, 139, 81), (tree_x + 7, tree_y, 19, 19))
-            pygame.draw.rect(surface, (132, 187, 92), (tree_x + 10, tree_y + 3, 8, 5))
-
-        # Distant city blocks provide readable motion without image assets.
-        for index in range(9):
-            x = int(index * 120 - (self.offset * 0.22) % 120)
-            height = 55 + (index % 3) * 18
-            pygame.draw.rect(surface, (119, 160, 169), (x, 255 - height, 86, height))
-            pygame.draw.rect(surface, (82, 126, 139), (x + 7, 255 - height, 5, height))
-            for row in range(3):
-                for column in range(3):
-                    window_x = x + 15 + column * 22
-                    window_y = 215 - height + row * 26
-                    pygame.draw.rect(surface, (242, 239, 185), (window_x, window_y, 12, 12))
-                    pygame.draw.rect(surface, (94, 137, 147), (window_x, window_y + 12, 12, 4))
-
-        self._draw_floor(surface, LOWER_FLOOR_Y, (56, 91, 73))
+    def _draw_playable_floor(self, surface: pygame.Surface, floor_y: int) -> None:
+        """Add the collision lane as a richly textured foreground."""
+        pygame.draw.rect(surface, (33, 53, 40), (0, floor_y + 18, WINDOW_WIDTH, 12))
+        pygame.draw.rect(surface, (75, 44, 33), (0, floor_y + 30, WINDOW_WIDTH, 70))
+        pygame.draw.rect(surface, (43, 31, 28), (0, floor_y + 100, WINDOW_WIDTH, 5))
+        pygame.draw.rect(surface, (119, 182, 76), (0, floor_y - 2, WINDOW_WIDTH, 12))
+        pygame.draw.rect(surface, (192, 224, 105), (0, floor_y - 2, WINDOW_WIDTH, 4))
+        marker_offset = int(self.offset) % 64
+        for x in range(-marker_offset, WINDOW_WIDTH + 64, 64):
+            pygame.draw.rect(surface, (68, 133, 66), (x + 5, floor_y + 6, 18, 5))
+            pygame.draw.rect(surface, (143, 202, 88), (x + 27, floor_y + 1, 22, 5))
+            pygame.draw.rect(surface, (108, 66, 45), (x + 10, floor_y + 41, 9, 7))
+            pygame.draw.rect(surface, (146, 91, 54), (x + 12, floor_y + 43, 5, 3))
+            pygame.draw.rect(surface, (102, 67, 49), (x + 42, floor_y + 64, 12, 8))
+            pygame.draw.rect(surface, (163, 113, 69), (x + 44, floor_y + 64, 6, 3))
+        for x, height in ((88, 18), (302, 13), (536, 22), (714, 15)):
+            pygame.draw.rect(surface, (46, 105, 53), (x, floor_y - height - 3, 4, height + 5))
+            pygame.draw.rect(surface, (84, 163, 67), (x - 7, floor_y - height, 16, 5))
+            pygame.draw.rect(surface, (135, 194, 76), (x + 3, floor_y - height - 4, 7, 4))
 
     def _draw_floor(
         self,

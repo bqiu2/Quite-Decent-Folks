@@ -48,6 +48,8 @@ from ui.pixel_style import (
     draw_pixel_runner,
     draw_power_readout,
     draw_status_hexagon,
+    draw_pixel_badge,
+    draw_pixel_wood_frame,
 )
 
 
@@ -311,6 +313,7 @@ class Level1Game:
             self._draw_item(surface, item)
         self._draw_player(surface)
         self._draw_hud(surface)
+        self._draw_objective_banner(surface)
         if status_panel_rect is not None:
             self.draw_status_panel(surface, status_panel_rect)
 
@@ -324,41 +327,37 @@ class Level1Game:
             color = (105, 68, 48)
 
         if obstacle.kind == "slide":
-            pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
-            pygame.draw.rect(surface, color, rect)
-            pygame.draw.rect(surface, (235, 136, 91), (rect.left + 4, rect.top + 6, rect.width - 8, 3))
-            pygame.draw.rect(surface, (217, 104, 82), (rect.left, rect.top, rect.width, 6))
-            pygame.draw.rect(surface, (73, 48, 44), (rect.left + 8, rect.top + 6, 7, rect.height - 6))
-            pygame.draw.rect(surface, (73, 48, 44), (rect.right - 15, rect.top + 6, 7, rect.height - 6))
-            for x in range(rect.left + 10, rect.right - 4, 18):
-                pygame.draw.rect(surface, (245, 191, 70), (x, rect.centery - 3, 7, 7))
-                pygame.draw.rect(surface, (255, 226, 126), (x + 2, rect.centery - 2, 3, 3))
+            pygame.draw.rect(surface, (45, 31, 27), rect.move(4, 5))
+            pygame.draw.rect(surface, (102, 59, 38), rect)
+            pygame.draw.rect(surface, (213, 137, 62), (rect.left + 3, rect.top + 4, rect.width - 6, 5))
+            pygame.draw.rect(surface, (246, 190, 83), (rect.left + 7, rect.top + 7, rect.width - 14, 3))
+            pygame.draw.rect(surface, (57, 42, 34), (rect.left + 7, rect.top + 10, 8, rect.height - 10))
+            pygame.draw.rect(surface, (57, 42, 34), (rect.right - 15, rect.top + 10, 8, rect.height - 10))
+            pygame.draw.rect(surface, (156, 91, 45), (rect.left + 17, rect.top + 13, rect.width - 34, rect.height - 17))
+            for x in range(rect.left + 20, rect.right - 8, 18):
+                pygame.draw.rect(surface, (239, 179, 69), (x, rect.centery - 3, 7, 7))
+                pygame.draw.rect(surface, (255, 227, 130), (x + 2, rect.centery - 2, 3, 3))
             return
 
-        pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
-        pygame.draw.rect(surface, color, rect)
-        stripe = (229, 178, 71)
-        for y in range(rect.top + 9, rect.bottom - 5, 24):
-            pygame.draw.rect(surface, stripe, (rect.left + 3, y, rect.width - 6, 7))
-            pygame.draw.rect(surface, (255, 214, 105), (rect.left + 5, y + 1, rect.width - 10, 2))
-            pygame.draw.rect(surface, (92, 56, 42), (rect.left + 3, y + 7, rect.width - 6, 3))
-        pygame.draw.rect(surface, (54, 44, 40), rect, width=3)
-        pygame.draw.rect(surface, (247, 219, 112), (rect.left + 7, rect.top + 4, 7, 5))
+        pygame.draw.rect(surface, (45, 31, 27), rect.move(4, 5))
+        pygame.draw.rect(surface, (102, 62, 39), rect)
+        pygame.draw.rect(surface, (210, 136, 61), (rect.left + 4, rect.top + 4, rect.width - 8, 7))
+        pygame.draw.rect(surface, (242, 184, 78), (rect.left + 7, rect.top + 5, rect.width - 16, 3))
+        pygame.draw.rect(surface, (68, 44, 33), (rect.left + 5, rect.top + 11, rect.width - 10, rect.height - 16))
+        for y in range(rect.top + 15, rect.bottom - 7, 18):
+            pygame.draw.rect(surface, (167, 93, 43), (rect.left + 6, y, rect.width - 12, 7))
+            pygame.draw.rect(surface, (231, 160, 65), (rect.left + 9, y + 1, rect.width - 18, 3))
+            pygame.draw.rect(surface, (92, 54, 34), (rect.left + 7, y + 7, rect.width - 14, 3))
+        pygame.draw.rect(surface, (244, 208, 103), (rect.left + 8, rect.top + 5, 7, 4))
 
     def _draw_item(self, surface: pygame.Surface, item: Collectible) -> None:
         rect = item.rect
-        center = rect.center
-        # A few square glints make collectible cards feel alive while keeping
-        # every edge hard and readable at native resolution.
-        sparkle = int(self.elapsed * 8 + item.pair_id) % 3
-        for offset_x, offset_y in ((-6, 7 + sparkle), (rect.width + 2, 12 - sparkle)):
+        # The pickup itself is the icon: no pale card behind it.  A few
+        # animated square motes make it float like the reference sprites.
+        sparkle = int(self.elapsed * 8 + item.pair_id) % 4
+        for offset_x, offset_y in ((-5, 8 + sparkle), (rect.width + 2, 13 - sparkle), (rect.width // 2, -5 - sparkle)):
             pygame.draw.rect(surface, PALETTE["gold_light"], (rect.left + offset_x, rect.top + offset_y, 3, 3))
-        pygame.draw.rect(surface, PALETTE["deep_ink"], rect.move(3, 4))
-        pygame.draw.rect(surface, (225, 211, 166), rect)
-        pygame.draw.rect(surface, (255, 249, 219), rect.inflate(-4, -4))
-        pygame.draw.rect(surface, (255, 255, 238), (rect.left + 5, rect.top + 5, 7, 3))
-        pygame.draw.rect(surface, (161, 139, 93), (rect.left + 4, rect.bottom - 8, rect.width - 8, 3))
-        draw_element_icon(surface, item.element, rect.inflate(-8, -8))
+        draw_element_icon(surface, item.element, rect)
 
     def _draw_player(self, surface: pygame.Surface) -> None:
         if self.player.is_invincible and int(self.player.invincible_remaining * 40) % 2 == 0:
@@ -376,10 +375,7 @@ class Level1Game:
         draw_pixel_plant(surface, center, self.plant.plant_type, scale=1)
 
     def _draw_hud(self, surface: pygame.Surface) -> None:
-        pygame.draw.rect(surface, PALETTE["deep_ink"], (0, 0, WINDOW_WIDTH, 52))
-        pygame.draw.rect(surface, PALETTE["panel"], (0, 4, WINDOW_WIDTH, 44))
-        pygame.draw.rect(surface, PALETTE["panel_light"], (0, 4, WINDOW_WIDTH, 3))
-        pygame.draw.rect(surface, PALETTE["gold"], (0, 49, WINDOW_WIDTH, 3))
+        draw_pixel_wood_frame(surface, pygame.Rect(0, 0, WINDOW_WIDTH, 72), fill=(29, 31, 29))
         font = pygame.font.Font(None, 27)
         small = pygame.font.Font(None, 21)
         remaining = max(0.0, TIME_LIMIT - self.elapsed)
@@ -387,42 +383,53 @@ class Level1Game:
         power_text = font.render(
             f"POWER {self.plant.current_power:05.1f}", False, (244, 241, 225)
         )
-        surface.blit(time_text, (18, 15))
-        surface.blit(power_text, (174, 15))
+        surface.blit(time_text, (25, 16))
+        surface.blit(power_text, (180, 16))
 
         for index in range(MAX_HP):
-            x = 390 + index * 27
+            x = 389 + index * 30
             color = PALETTE["red"] if index < self.player.hp else (80, 83, 82)
-            pygame.draw.rect(surface, color, (x, 16, 9, 9))
-            pygame.draw.rect(surface, color, (x + 9, 16, 9, 9))
-            pygame.draw.rect(surface, color, (x + 3, 24, 12, 9))
-            pygame.draw.rect(surface, PALETTE["gold_light"], (x + 2, 14, 4, 4))
+            pygame.draw.rect(surface, (45, 31, 27), (x, 13, 18, 18))
+            pygame.draw.rect(surface, color, (x + 3, 15, 12, 13))
+            pygame.draw.rect(surface, (246, 142, 113), (x + 5, 15, 5, 4))
+            pygame.draw.rect(surface, PALETTE["gold_light"], (x + 2, 12, 4, 4))
 
-        x = 500
+        x = 510
         for element in ELEMENT_TYPES:
-            icon_rect = pygame.Rect(x - 9, 8, 18, 18)
+            icon_rect = pygame.Rect(x - 12, 6, 26, 26)
             draw_element_icon(surface, element, icon_rect)
             label = small.render(str(self.collected[element]), False, (244, 241, 225))
-            surface.blit(label, (x - 5, 31))
+            # Keep the counter above the timber's lower trim; the previous
+            # position sat directly on the frame line at the bottom of HUD.
+            surface.blit(label, label.get_rect(center=(x + 1, 48)))
             x += 48
+
+    def _draw_objective_banner(self, surface: pygame.Surface) -> None:
+        """Show the first-level goal in the same timber UI language."""
+        banner = pygame.Rect(14, 84, 390, 62)
+        draw_pixel_wood_frame(surface, banner, fill=(29, 31, 29))
+        draw_pixel_badge(surface, pygame.Rect(27, 96, 92, 22), "MISSION", fill=(88, 132, 66))
+        font = pygame.font.Font(None, 18)
+        line_one = font.render("COLLECT ELEMENTS / BUILD POWER", False, PALETTE["cream"])
+        line_two = font.render("SPRAY BOOSTS PLANT HEALTH", False, PALETTE["muted_cream"])
+        surface.blit(line_one, (132, 96))
+        surface.blit(line_two, (132, 118))
 
     def draw_status_panel(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Draw the live six-axis status radar in the course's open corner."""
-        draw_pixel_panel(
+        draw_pixel_wood_frame(
             surface,
             rect,
-            fill=PALETTE["panel"],
-            border=PALETTE["gold"],
-            accent=PALETTE["green"],
+            fill=(29, 31, 29),
         )
         title_font = pygame.font.Font(None, 20)
-        title = title_font.render("LIVE PLANT STATUS", False, PALETTE["cream"])
-        surface.blit(title, (rect.left + 18, rect.top + 12))
-        pygame.draw.rect(surface, PALETTE["panel_light"], (rect.left + 18, rect.top + 34, rect.width - 36, 2))
+        title = title_font.render("PLANT HEALTH", False, PALETTE["cream"])
+        surface.blit(title, title.get_rect(midtop=(rect.centerx, rect.top + 12)))
+        pygame.draw.rect(surface, (155, 99, 49), (rect.left + 18, rect.top + 34, rect.width - 36, 3))
         draw_status_hexagon(
             surface,
-            (rect.centerx, rect.top + 116),
-            56,
+            (rect.centerx, rect.top + 104),
+            40,
             self.plant.status,
             show_labels=True,
             show_values=False,
@@ -544,7 +551,7 @@ def _show_level1_tutorial(surface: pygame.Surface) -> bool:
         "LEVEL 1  |  PLANT RUNNER",
         "UP / raise only left hand: jump",
         "DOWN / raise only right hand: slide",
-        "Collect the elements your plant needs; avoid pests.",
+        "Collect nutrients and spray; avoid hazards.",
         "Press ENTER or SPACE to start  |  ESC to quit",
     )
 
@@ -588,23 +595,29 @@ def _draw_camera_overlay(
         return
 
     x = WINDOW_WIDTH - CAMERA_PREVIEW_WIDTH - CAMERA_PREVIEW_MARGIN
-    y = 62
+    y = 96
     frame_rect = pygame.Rect(
         x - 3,
         y - 3,
         CAMERA_PREVIEW_WIDTH + 6,
         CAMERA_PREVIEW_HEIGHT + 28,
     )
-    pygame.draw.rect(surface, (27, 37, 42), frame_rect, border_radius=4)
+    draw_pixel_wood_frame(surface, frame_rect, fill=(27, 37, 42))
 
     small = pygame.font.Font(None, 20)
+    label = small.render(
+        "CAM 0  /  DIRECTSHOW POSE",
+        False,
+        (222, 211, 163),
+    )
+    surface.blit(label, (x + 8, y - 23))
     if camera_input is None or camera_input.latest_frame is None:
         pygame.draw.rect(
             surface,
             (53, 57, 59),
             (x, y, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT),
         )
-        status = small.render("CAMERA OFF", True, (244, 119, 94))
+        status = small.render("CAMERA OFF", False, (244, 119, 94))
         surface.blit(status, status.get_rect(center=(x + 80, y + 60)))
         return
 
@@ -622,12 +635,12 @@ def _draw_camera_overlay(
 
     action = camera_input.displayed_action
     action_color = (245, 198, 75) if action != "none" else (174, 220, 184)
-    label = small.render(
+    action_label = small.render(
         f"{camera_input.label}  POSE {action.upper()}",
-        True,
+        False,
         action_color,
     )
-    surface.blit(label, (x + 3, y + CAMERA_PREVIEW_HEIGHT + 5))
+    surface.blit(action_label, (x + 8, y + CAMERA_PREVIEW_HEIGHT + 6))
 
 
 def main() -> None:

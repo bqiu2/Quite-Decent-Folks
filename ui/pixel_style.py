@@ -97,6 +97,33 @@ def draw_pixel_panel(
         pygame.draw.rect(surface, accent, (rect.left + 2, rect.top + 9, 5, rect.height - 18))
 
 
+def draw_pixel_wood_frame(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    fill: tuple[int, int, int] = PALETTE["deep_ink"],
+) -> None:
+    """Draw a warm timber-framed panel for the first-level HUD and overlays."""
+    rect = pygame.Rect(rect)
+    pygame.draw.rect(surface, (39, 29, 27), rect.move(5, 6))
+    pygame.draw.rect(surface, (61, 39, 29), rect)
+    pygame.draw.rect(surface, (177, 113, 54), rect.inflate(-4, -4))
+    inner = rect.inflate(-12, -12)
+    pygame.draw.rect(surface, fill, inner)
+    pygame.draw.rect(surface, (229, 166, 75), (inner.left, inner.top, inner.width, 3))
+    pygame.draw.rect(surface, (104, 62, 39), (inner.left, inner.bottom - 4, inner.width, 4))
+    pygame.draw.rect(surface, (82, 49, 35), (inner.left, inner.top, 4, inner.height))
+    pygame.draw.rect(surface, (221, 151, 64), (inner.right - 4, inner.top, 4, inner.height))
+    pygame.draw.rect(surface, (42, 31, 27), rect, 2)
+    for x, y in (
+        (rect.left + 8, rect.top + 8),
+        (rect.right - 12, rect.top + 8),
+        (rect.left + 8, rect.bottom - 12),
+        (rect.right - 12, rect.bottom - 12),
+    ):
+        pygame.draw.rect(surface, (247, 207, 111), (x, y, 3, 3))
+
+
 def draw_pixel_backdrop(
     surface: pygame.Surface,
     *,
@@ -324,38 +351,61 @@ def draw_pixel_runner(
     running_frame: int = 0,
     crouching: bool = False,
 ) -> None:
-    """Draw a blocky runner carrying the generated plant sprite."""
+    """Draw a detailed farmer runner carrying the generated plant sprite."""
     x, y = rect.left, rect.top
-    ink = PALETTE["ink"]
-    skin = (245, 194, 136)
-    shirt = (52, 112, 128)
-    accent = (236, 163, 69)
+    ink = (48, 37, 31)
+    skin = (238, 177, 119)
+    skin_light = (255, 211, 147)
+    hair = (76, 48, 34)
+    hat = (205, 143, 67)
+    hat_light = (247, 196, 101)
+    shirt = (53, 111, 74)
+    shirt_light = (101, 165, 84)
+    pants = (65, 67, 70)
+    boot = (55, 42, 36)
+    accent = (238, 177, 66)
     if crouching:
-        block = pygame.Rect(x + 5, y + 15, rect.width - 9, 19)
-        pygame.draw.rect(surface, ink, block.move(2, 3))
-        pygame.draw.rect(surface, shirt, block)
-        pygame.draw.rect(surface, skin, (x + 3, y + 5, 15, 13))
-        pygame.draw.rect(surface, ink, (x + 3, y + 4, 15, 4))
-        pygame.draw.rect(surface, skin, (x + 27, y + 20, 12, 6))
-        pygame.draw.rect(surface, ink, (x + 7, y + 32, 13, 7))
-        pygame.draw.rect(surface, ink, (x + 25, y + 31, 14, 7))
-        draw_pixel_plant(surface, (x + 29, y + 18), plant_type, scale=1)
+        pygame.draw.rect(surface, ink, (x + 3, y + 34, 40, 8))
+        pygame.draw.rect(surface, pants, (x + 6, y + 30, 32, 10))
+        pygame.draw.rect(surface, boot, (x + 4, y + 38, 15, 6))
+        pygame.draw.rect(surface, boot, (x + 27, y + 37, 15, 6))
+        pygame.draw.rect(surface, ink, (x + 5, y + 14, 31, 20))
+        pygame.draw.rect(surface, shirt, (x + 7, y + 15, 28, 17))
+        pygame.draw.rect(surface, shirt_light, (x + 10, y + 17, 8, 7))
+        pygame.draw.rect(surface, skin, (x + 2, y + 8, 15, 12))
+        pygame.draw.rect(surface, skin_light, (x + 5, y + 10, 9, 6))
+        pygame.draw.rect(surface, hair, (x + 2, y + 6, 16, 5))
+        pygame.draw.rect(surface, skin, (x + 29, y + 21, 10, 6))
+        pygame.draw.rect(surface, accent, (x + 21, y + 19, 8, 4))
+        draw_pixel_plant(surface, (x + 43, y + 42), plant_type, scale=1)
         return
 
-    pygame.draw.rect(surface, ink, (x + 12, y + 2, 18, 17))
-    pygame.draw.rect(surface, skin, (x + 14, y + 5, 14, 12))
-    pygame.draw.rect(surface, (61, 43, 42), (x + 13, y + 2, 17, 5))
-    pygame.draw.rect(surface, (39, 86, 102), (x + 9, y + 19, 24, 28))
-    pygame.draw.rect(surface, shirt, (x + 12, y + 22, 18, 22))
-    pygame.draw.rect(surface, accent, (x + 13, y + 25, 3, 11))
-    pygame.draw.rect(surface, ink, (x + 6, y + 22, 8, 20))
-    pygame.draw.rect(surface, skin, (x + 4, y + 39, 10, 5))
-    pygame.draw.rect(surface, ink, (x + 30, y + 23, 8, 18))
-    pygame.draw.rect(surface, skin, (x + 36, y + 37, 7, 5))
-
     swing = 4 if running_frame % 2 == 0 else -4
-    pygame.draw.rect(surface, ink, (x + 10 + swing, y + 44, 9, 25))
-    pygame.draw.rect(surface, ink, (x + 24 - swing, y + 44, 9, 25))
-    pygame.draw.rect(surface, (45, 47, 56), (x + 7 + swing, y + 67, 15, 6))
-    pygame.draw.rect(surface, (45, 47, 56), (x + 22 - swing, y + 67, 15, 6))
-    draw_pixel_plant(surface, (x + 39, y + 41), plant_type, scale=1)
+    pygame.draw.rect(surface, ink, (x + 9 + swing, y + 43, 11, 26))
+    pygame.draw.rect(surface, pants, (x + 12 + swing, y + 44, 7, 22))
+    pygame.draw.rect(surface, ink, (x + 24 - swing, y + 43, 11, 26))
+    pygame.draw.rect(surface, pants, (x + 25 - swing, y + 44, 7, 22))
+    pygame.draw.rect(surface, boot, (x + 6 + swing, y + 66, 17, 7))
+    pygame.draw.rect(surface, boot, (x + 21 - swing, y + 66, 17, 7))
+    pygame.draw.rect(surface, ink, (x + 8, y + 18, 27, 29))
+    pygame.draw.rect(surface, shirt, (x + 11, y + 21, 21, 24))
+    pygame.draw.rect(surface, shirt_light, (x + 13, y + 24, 5, 12))
+    pygame.draw.rect(surface, accent, (x + 26, y + 23, 4, 15))
+    pygame.draw.rect(surface, ink, (x + 4, y + 21, 9, 22))
+    pygame.draw.rect(surface, skin, (x + 3, y + 39, 10, 6))
+    pygame.draw.rect(surface, skin_light, (x + 4, y + 40, 6, 3))
+    pygame.draw.rect(surface, ink, (x + 31, y + 22, 9, 20))
+    pygame.draw.rect(surface, skin, (x + 37, y + 37, 8, 6))
+    pygame.draw.rect(surface, ink, (x + 11, y + 3, 22, 18))
+    pygame.draw.rect(surface, skin, (x + 14, y + 6, 16, 13))
+    pygame.draw.rect(surface, skin_light, (x + 16, y + 8, 9, 5))
+    pygame.draw.rect(surface, hair, (x + 13, y + 3, 19, 6))
+    pygame.draw.rect(surface, ink, (x + 8, y + 1, 30, 7))
+    pygame.draw.rect(surface, hat, (x + 12, y - 3, 22, 8))
+    pygame.draw.rect(surface, hat_light, (x + 15, y - 5, 15, 5))
+    pygame.draw.rect(surface, (168, 105, 48), (x + 8, y + 4, 30, 4))
+    pygame.draw.rect(surface, (246, 212, 119), (x + 13, y + 5, 18, 2))
+    pygame.draw.rect(surface, ink, (x + 27, y + 12, 3, 3))
+    # Keep the carried plant at the farmer's side so the face, hat, and
+    # running pose remain readable against the busy forest backdrop.
+    draw_pixel_plant(surface, (x + 46, y + 57), plant_type, scale=1)
