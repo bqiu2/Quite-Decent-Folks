@@ -429,7 +429,9 @@ class Level1Game:
         )
         draw_power_readout(
             surface,
-            (rect.left + 18, rect.bottom - 42),
+            # The readout has two lines; keep both lines comfortably inside
+            # the panel instead of letting the delta touch its bottom border.
+            (rect.left + 18, rect.bottom - 64),
             self.plant.current_power,
             self.power_before,
         )
