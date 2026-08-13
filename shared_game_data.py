@@ -43,6 +43,7 @@ shared_game_data.py
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Literal
 import json
 
@@ -125,7 +126,7 @@ POWER_MAX = 100.0
 LEVEL1_MAX_HP = 3
 
 # 第一关默认时间限制，单位：秒。
-LEVEL1_TIME_LIMIT = 60.0
+LEVEL1_TIME_LIMIT = 40.0
 
 # 第二关轨道数量。
 LEVEL2_LANE_COUNT = 5
@@ -832,7 +833,9 @@ def save_game_result(result: FinalResult, file_path: str) -> None:
     ensure_ascii=False：
         后续即使 JSON 中加入中文，也不会变成 Unicode 转义。
     """
-    with open(file_path, "w", encoding="utf-8") as f:
+    output_path = Path(file_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(
             asdict(result),
             f,

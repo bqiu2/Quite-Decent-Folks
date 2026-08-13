@@ -1,0 +1,12 @@
+{
+    "plant_id": "PLANT_0007",
+    "plant_type": "shrub",
+    "initial_power": 31.66,
+    "final_power": 38.8,
+    "level1_score": 0.0,
+    "level2_score": 21.0,
+    "difficulty": "hard",
+    "difficulty_multiplier": 1.5,
+    "final_score": 28.45,
+    "victory": false
+}

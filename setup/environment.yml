@@ -16,3 +16,8 @@ dependencies:
       - opencv-contrib-python==4.11.0.86
       - numpy==1.26.4
       - Pillow==12.3.0
+      - ipykernel==7.3.0
+      - torch==2.13.0
+      - transformers==5.15.0
+      - safetensors==0.8.0
+      - open_clip_torch==3.3.0

@@ -1,122 +1,279 @@
+"""
+plant_ai/plant_analyzer.py
+
+BioCLIP 植物类型分类 + shared_game_data.PlantData 统一输出。
+
+正式游戏接口：
+
+    plant = analyze_plant("image.jpg")
+
+返回：
+    shared_game_data.PlantData
+
+其中：
+    plant.status        -> PlantStatus
+    plant.initial_power -> calculate_power(status)
+    plant.current_power -> 初始时等于 initial_power
+"""
+
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
+import threading
+
+import torch
 
 from shared_game_data import (
     PlantData,
-    PlantStatus,
     calculate_power,
-    normalize_plant_status,
 )
 
-from .config import DATA_DIR, PLANT_ID_COUNTER
-from .health_analyzer import get_health_analyzer
-from .image_preprocess import auto_crop_plant, load_rgb_image, save_debug_crop
-from .prototype_classifier import get_type_classifier
+from .config import (
+    MODEL_NAME,
+    PLANT_TYPES,
+    PLANT_TYPE_TO_ID,
+)
+from .prompts import CLASS_PROMPTS
+from .model_loader import get_bioclip
+from .image_preprocess import load_rgb_image
+from .health_analyzer import analyze_health
 
 
-@dataclass
-class PlantAnalysisDetails:
-    plant_type: str
-    type_method: str
-    type_scores: dict[str, float]
-    type_similarities: dict[str, float]
-    flower_presence: float
-    reference_counts: dict[str, int]
-    crop_bbox: tuple[int, int, int, int]
-    crop_vegetation_coverage: float
-    crop_used: bool
-    health_raw_scores: dict[str, float]
-    health_final_scores: dict[str, float]
-    health_confidence: dict[str, float]
-    health_level_scores: dict[str, list[float]]
-    warnings: list[str] = field(default_factory=list)
+class PlantAnalyzer:
+    """
+    BioCLIP grass / shrub / flower 分类器。
+    """
 
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def __init__(self, device=None):
+        bundle = get_bioclip(device=device)
+
+        self.model = bundle.model
+        self.preprocess = bundle.preprocess
+        self.tokenizer = bundle.tokenizer
+        self.device = bundle.device
+
+        self.text_features = self._build_text_features()
+
+    @torch.inference_mode()
+    def _build_text_features(self):
+        class_features = []
+
+        for plant_type in PLANT_TYPES:
+            prompts = CLASS_PROMPTS[plant_type]
+
+            tokens = self.tokenizer(
+                prompts
+            ).to(self.device)
+
+            features = self.model.encode_text(tokens)
+
+            features = features / features.norm(
+                dim=-1,
+                keepdim=True,
+            ).clamp_min(1e-12)
+
+            feature = features.mean(dim=0)
+
+            feature = feature / feature.norm().clamp_min(
+                1e-12
+            )
+
+            class_features.append(feature)
+
+        return torch.stack(
+            class_features,
+            dim=0,
+        )
+
+    @torch.inference_mode()
+    def classify(self, image):
+        """
+        返回类型分类调试字典。
+        这个接口保留给测试使用。
+        """
+
+        pil_image = load_rgb_image(image)
+
+        image_tensor = self.preprocess(
+            pil_image
+        ).unsqueeze(0).to(self.device)
+
+        image_features = self.model.encode_image(
+            image_tensor
+        )
+
+        image_features = image_features / image_features.norm(
+            dim=-1,
+            keepdim=True,
+        ).clamp_min(1e-12)
+
+        similarities = (
+            image_features @ self.text_features.T
+        )[0]
+
+        if hasattr(self.model, "logit_scale"):
+            scale = torch.clamp(
+                self.model.logit_scale.exp().detach(),
+                max=100.0,
+            )
+        else:
+            scale = torch.tensor(
+                100.0,
+                device=self.device,
+                dtype=similarities.dtype,
+            )
+
+        probabilities = torch.softmax(
+            similarities * scale,
+            dim=-1,
+        )
+
+        best_index = int(
+            probabilities.argmax().item()
+        )
+
+        plant_type = PLANT_TYPES[
+            best_index
+        ]
+
+        sorted_probabilities, _ = torch.sort(
+            probabilities,
+            descending=True,
+        )
+
+        margin = float(
+            (
+                sorted_probabilities[0]
+                - sorted_probabilities[1]
+            ).item()
+        )
+
+        return {
+            "plant_type": plant_type,
+            # 注意：
+            # 这是分类调试 ID，不是 PlantData.plant_id。
+            "type_id": PLANT_TYPE_TO_ID[
+                plant_type
+            ],
+            "confidence": float(
+                probabilities[best_index].item()
+            ),
+            "margin": margin,
+            "scores": {
+                name: float(probabilities[i].item())
+                for i, name in enumerate(PLANT_TYPES)
+            },
+            "similarities": {
+                name: float(similarities[i].item())
+                for i, name in enumerate(PLANT_TYPES)
+            },
+            "model": MODEL_NAME.replace(
+                "hf-hub:",
+                "",
+            ),
+        }
 
 
-def _generate_plant_id() -> str:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ANALYZERS: dict[str, PlantAnalyzer] = {}
+_ANALYZER_LOCK = threading.Lock()
+_COUNTER_PATH = Path(__file__).resolve().parents[1] / "data" / "plant_id_counter.txt"
+_FALLBACK_COUNTER = 0
+_COUNTER_LOCK = threading.Lock()
 
-    current = 0
-    if PLANT_ID_COUNTER.exists():
+# 当前进程内简单生成：
+# PLANT_0001, PLANT_0002, ...
+def get_plant_analyzer(device=None):
+    key = str(device or "default")
+    with _ANALYZER_LOCK:
+        analyzer = _ANALYZERS.get(key)
+        if analyzer is None:
+            analyzer = PlantAnalyzer(device=device)
+            _ANALYZERS[key] = analyzer
+        return analyzer
+
+
+def classify_plant(image, device=None):
+    """
+    调试接口：
+    只做 grass / shrub / flower 分类，返回 dict。
+    """
+    return get_plant_analyzer(
+        device=device
+    ).classify(image)
+
+
+def _new_plant_id() -> str:
+    """Allocate a plant ID that remains unique across application launches."""
+    global _FALLBACK_COUNTER
+
+    with _COUNTER_LOCK:
         try:
-            current = int(PLANT_ID_COUNTER.read_text(encoding="utf-8").strip())
-        except (ValueError, OSError):
-            current = 0
+            # The file stores the next available number, so the checked-in
+            # initial value ``1`` produces the first ID ``PLANT_0001``.
+            current = int(_COUNTER_PATH.read_text(encoding="utf-8").strip() or "1")
+        except (OSError, ValueError):
+            current = max(1, _FALLBACK_COUNTER + 1)
 
-    current += 1
-    PLANT_ID_COUNTER.write_text(str(current), encoding="utf-8")
-    return f"PLANT_{current:04d}"
+        next_value = max(1, current, _FALLBACK_COUNTER + 1)
+        try:
+            _COUNTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path = _COUNTER_PATH.with_suffix(".tmp")
+            temporary_path.write_text(str(next_value + 1), encoding="utf-8")
+            temporary_path.replace(_COUNTER_PATH)
+        except OSError:
+            # A read-only installation can still run; uniqueness is retained
+            # for the lifetime of this process via the fallback counter.
+            pass
+        _FALLBACK_COUNTER = next_value
+
+    return f"PLANT_{next_value:04d}"
 
 
-def analyze_plant_with_details(
+def analyze_plant(
     image_path: str,
-    *,
-    debug_crop_path: str | None = None,
-) -> tuple[PlantData, PlantAnalysisDetails]:
-    image_path_obj = Path(image_path)
-    original = load_rgb_image(image_path_obj)
-    crop = auto_crop_plant(original)
+    device=None,
+) -> PlantData:
+    """
+    【正式游戏统一接口】
 
-    if debug_crop_path:
-        save_debug_crop(crop, debug_crop_path)
+    完全遵循 shared_game_data.py：
 
-    classifier = get_type_classifier()
-    type_result = classifier.classify(crop.image)
+        def analyze_plant(image_path: str) -> PlantData
 
-    health_analyzer = get_health_analyzer()
-    health = health_analyzer.analyze(crop.image)
+    执行：
+        1. BioCLIP 判断 grass / shrub / flower
+        2. BioCLIP 得到 PlantStatus 六维状态
+        3. shared_game_data.calculate_power() 计算初始战力
+        4. 返回 PlantData
 
-    status = PlantStatus(
-        water=health["water"].final_score,
-        light=health["light"].final_score,
-        nitrogen=health["nitrogen"].final_score,
-        phosphorus=health["phosphorus"].final_score,
-        potassium=health["potassium"].final_score,
-        pest=health["pest"].final_score,
+    初次分析保证：
+        initial_power == current_power
+    """
+
+    path = Path(image_path)
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Image not found: {path}"
+        )
+
+    type_result = classify_plant(
+        path,
+        device=device,
     )
-    status = normalize_plant_status(status)
+
+    status = analyze_health(
+        path,
+        device=device,
+    )
+
     power = calculate_power(status)
 
-    plant = PlantData(
-        plant_id=_generate_plant_id(),
-        plant_type=type_result.plant_type,
-        image_path=str(image_path_obj),
+    return PlantData(
+        plant_id=_new_plant_id(),
+        plant_type=type_result["plant_type"],
+        image_path=str(path),
         status=status,
         initial_power=power,
         current_power=power,
     )
-
-    warnings = list(type_result.warnings)
-    warnings.append(
-        "water/pest are visual estimates; light/N/P/K are visible-symptom estimates, "
-        "not direct physical or chemical measurements."
-    )
-
-    details = PlantAnalysisDetails(
-        plant_type=type_result.plant_type,
-        type_method=type_result.method,
-        type_scores={k: round(v, 4) for k, v in type_result.scores.items()},
-        type_similarities={k: round(v, 4) for k, v in type_result.similarities.items()},
-        flower_presence=round(type_result.flower_presence, 4),
-        reference_counts=type_result.reference_counts,
-        crop_bbox=crop.bbox,
-        crop_vegetation_coverage=round(crop.vegetation_coverage, 4),
-        crop_used=crop.used_auto_crop,
-        health_raw_scores={k: v.raw_score for k, v in health.items()},
-        health_final_scores={k: v.final_score for k, v in health.items()},
-        health_confidence={k: v.confidence for k, v in health.items()},
-        health_level_scores={k: v.level_scores for k, v in health.items()},
-        warnings=warnings,
-    )
-
-    return plant, details
-
-
-def analyze_plant(image_path: str) -> PlantData:
-    """统一给游戏调用的接口：图片 -> PlantData。"""
-    plant, _ = analyze_plant_with_details(image_path)
-    return plant

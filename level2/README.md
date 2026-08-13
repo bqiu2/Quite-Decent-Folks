@@ -1,8 +1,10 @@
-# Level 2：植物守卫
+# Level 2: Plant Guardian
 
-第二关使用 Pygame 实现五条滑轨上的植物打僵尸玩法，并使用 MediaPipe Hand Landmarker 识别食指朝上、朝下手势。
+Level 2 is a five-lane pixel-art defense game. The detected plant moves along
+the vertical rail and attacks two zombie waves before they reach the house.
+MediaPipe Hand Landmarker can move the plant with an index-finger gesture.
 
-## 接入主程序
+## Integration
 
 ```python
 from level2 import run_level2
@@ -14,33 +16,23 @@ level2_result = run_level2(
 )
 ```
 
-输入和输出严格使用 `shared_game_data.py` 中的：
+The integration uses the shared `PlantData`, `DifficultyConfig`, `Level2Result`,
+and `ATTACK_CONFIG` data structures. Plant type, current power, and difficulty
+affect the plant form, attack style, damage, zombie health, speed, and count.
 
-- `PlantData`
-- `DifficultyConfig`
-- `Level2Result`
-- `ATTACK_CONFIG`
+## Controls
 
-植物类型、当前战力和难度会影响外观、攻击方式、伤害、僵尸生命、速度和数量。
-
-## 单独测试
-
-先下载官方手部模型：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File setup\download_hand_model.ps1
-```
-
-然后运行：
+Run the standalone demo with:
 
 ```powershell
 python -m level2.demo
 ```
 
-按 `H` 开启或关闭摄像头。握起中指、无名指和小指，只伸出食指：
+Keyboard controls are always available:
 
-- 食指朝上：植物上移一格
-- 食指朝下：植物下移一格
-- 收回或横放食指后，才能再次触发同一方向
+- `Up` / `Down` or `W` / `S`: move the plant between rails
+- `H`: enable or disable hand control
+- `Escape`: quit the level
 
-方向键、`W/S` 始终可以作为备用控制。
+When hand control is enabled, extend only the index finger. Point up or down to
+move one rail. Relax or hold the finger horizontally before triggering again.
