@@ -7,13 +7,24 @@ WINDOW_HEIGHT = 720
 FPS = 60
 
 LANE_COUNT = LEVEL2_LANE_COUNT
-BATTLEFIELD_TOP = 120
-BATTLEFIELD_BOTTOM = 670
-LANE_HEIGHT = (BATTLEFIELD_BOTTOM - BATTLEFIELD_TOP) // LANE_COUNT
+BATTLEFIELD_TOP = 100
+BATTLEFIELD_BOTTOM = 680
+# The HUD is intentionally compact, while the illustrated farm starts lower
+# so the first lane sits on grass instead of crossing the background fence.
+LANE_TOP = 200
+LANE_HEIGHT = (BATTLEFIELD_BOTTOM - LANE_TOP) // LANE_COUNT
 
-HOUSE_WIDTH = 155
-PLANT_X = 205
+HOUSE_WIDTH = 270
+# The field edge recedes toward the upper-right in the illustrated farm.  The
+# lift therefore starts farther right in the distance and leans left toward
+# the viewer at the bottom of the field.
+PLANT_X = 338
+PLANT_X_BOTTOM = 292
 PLANT_SIZE = 68
+# The source illustration has a foreground fence across the lower edge.  The
+# game redraws this strip after the lift so the lift reads as being behind it.
+FOREGROUND_FENCE_TOP = 644
+FOREGROUND_FENCE_WIDTH = HOUSE_WIDTH + 220
 
 PROJECTILE_SPEED = 620.0
 PROJECTILE_DAMAGE = 20.0
@@ -45,4 +56,14 @@ def lane_center_y(lane_index: int) -> int:
     if not 0 <= lane_index < LANE_COUNT:
         raise ValueError(f"lane_index must be between 0 and {LANE_COUNT - 1}")
 
-    return BATTLEFIELD_TOP + lane_index * LANE_HEIGHT + LANE_HEIGHT // 2
+    return LANE_TOP + lane_index * LANE_HEIGHT + LANE_HEIGHT // 2
+
+
+def lane_x(lane_index: int) -> int:
+    """Return the plant-lift x position along the field's perspective edge."""
+    if not 0 <= lane_index < LANE_COUNT:
+        raise ValueError(f"lane_index must be between 0 and {LANE_COUNT - 1}")
+    if LANE_COUNT == 1:
+        return PLANT_X
+    progress = lane_index / (LANE_COUNT - 1)
+    return round(PLANT_X + (PLANT_X_BOTTOM - PLANT_X) * progress)

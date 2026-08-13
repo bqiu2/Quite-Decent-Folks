@@ -2,7 +2,7 @@
 
 import pygame
 
-from .config import LANE_COUNT, PLANT_SIZE, PLANT_X, lane_center_y
+from .config import LANE_COUNT, PLANT_SIZE, lane_center_y, lane_x
 from ui.pixel_style import draw_pixel_plant
 
 
@@ -15,7 +15,8 @@ class PlantPlayer(pygame.sprite.Sprite):
         self.lane_index = LANE_COUNT // 2
         self.image = pygame.Surface((PLANT_SIZE, PLANT_SIZE), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
-        self.rect.center = (PLANT_X, lane_center_y(self.lane_index))
+        self.rect.center = (lane_x(self.lane_index), lane_center_y(self.lane_index))
+        self.target_x = float(self.rect.centerx)
         self.target_y = float(self.rect.centery)
         self._render_image()
 
@@ -30,15 +31,23 @@ class PlantPlayer(pygame.sprite.Sprite):
     def move_to_lane(self, lane_index: int) -> None:
         """Select a lane, clamping camera or keyboard input to valid stops."""
         self.lane_index = max(0, min(LANE_COUNT - 1, lane_index))
+        self.target_x = float(lane_x(self.lane_index))
         self.target_y = float(lane_center_y(self.lane_index))
 
     def update(self, dt: float) -> None:
         """Animate the pot along the rail instead of teleporting between lanes."""
-        distance = self.target_y - self.rect.centery
+        horizontal_distance = self.target_x - self.rect.centerx
+        vertical_distance = self.target_y - self.rect.centery
         maximum_step = 720.0 * dt
-        if abs(distance) <= maximum_step:
+        if abs(horizontal_distance) <= maximum_step:
+            self.rect.centerx = round(self.target_x)
+        elif horizontal_distance > 0:
+            self.rect.centerx += round(maximum_step)
+        else:
+            self.rect.centerx -= round(maximum_step)
+        if abs(vertical_distance) <= maximum_step:
             self.rect.centery = round(self.target_y)
-        elif distance > 0:
+        elif vertical_distance > 0:
             self.rect.centery += round(maximum_step)
         else:
             self.rect.centery -= round(maximum_step)

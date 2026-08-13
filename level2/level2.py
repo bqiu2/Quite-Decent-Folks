@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pygame
 
@@ -21,6 +22,8 @@ from .config import (
     BACKGROUND_COLOR,
     BATTLEFIELD_BOTTOM,
     BATTLEFIELD_TOP,
+    FOREGROUND_FENCE_TOP,
+    FOREGROUND_FENCE_WIDTH,
     FPS,
     HOUSE_COLOR,
     HOUSE_ROOF_COLOR,
@@ -30,12 +33,14 @@ from .config import (
     LANE_COUNT,
     LANE_HEIGHT,
     LANE_LINE_COLOR,
+    LANE_TOP,
     RAIL_COLOR,
     TEXT_COLOR,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
     ZOMBIE_GOAL_X,
     lane_center_y,
+    lane_x,
 )
 from .plant_player import PlantPlayer
 from .projectile import Projectile
@@ -69,6 +74,7 @@ class Level2Game:
             count_multiplier=self.difficulty.zombie_count_multiplier
         )
         self.hand_controller = HandController()
+        self.background = self._load_background()
         self.attack_timer = 0.0
         self.zombies_defeated = 0
         self.zombies_escaped = 0
@@ -273,21 +279,73 @@ class Level2Game:
         self.result = None
 
     def _draw(self) -> None:
-        self.screen.fill(BACKGROUND_COLOR)
-        self._draw_hud()
+        self._draw_background()
         self._draw_battlefield()
         self._draw_house()
         self._draw_rail()
+        self._draw_foreground_fence()
         self._draw_hand_target()
         self.projectiles.draw(self.screen)
         self.zombies.draw(self.screen)
         for zombie in self.zombies:
             zombie.draw_health_bar(self.screen)
         self.player.draw(self.screen)
+        self._draw_hud()
         if self.elapsed_time < self.tutorial_until and self.result is None:
             self._draw_tutorial()
         if self.result is not None:
             self._draw_result_overlay()
+
+    @staticmethod
+    def _load_background() -> pygame.Surface | None:
+        """Load the illustrated farm battlefield and fit it to the game window."""
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "assets"
+            / "level2"
+            / "farm_defense_background.png"
+        )
+        try:
+            image = pygame.image.load(str(path))
+            if pygame.display.get_surface() is not None:
+                image = image.convert()
+            else:
+                image = image.copy()
+        except (FileNotFoundError, pygame.error):
+            return None
+
+        # The generated asset is already 16:9.  Keep this crop/scale guard so
+        # a replacement asset cannot stretch the farmhouse or lane geometry.
+        source_width, source_height = image.get_size()
+        target_ratio = WINDOW_WIDTH / WINDOW_HEIGHT
+        source_ratio = source_width / source_height
+        if source_ratio > target_ratio:
+            crop_width = round(source_height * target_ratio)
+            image = image.subsurface(
+                pygame.Rect(
+                    (source_width - crop_width) // 2,
+                    0,
+                    crop_width,
+                    source_height,
+                )
+            ).copy()
+        elif source_ratio < target_ratio:
+            crop_height = round(source_width / target_ratio)
+            image = image.subsurface(
+                pygame.Rect(
+                    0,
+                    (source_height - crop_height) // 2,
+                    source_width,
+                    crop_height,
+                )
+            ).copy()
+        return pygame.transform.scale(image, (WINDOW_WIDTH, WINDOW_HEIGHT))
+
+    def _draw_background(self) -> None:
+        if self.background is not None:
+            self.screen.blit(self.background, (0, 0))
+        else:
+            self.screen.fill(BACKGROUND_COLOR)
 
     def _draw_hud_legacy_old(self) -> None:
         pygame.draw.rect(self.screen, PALETTE["deep_ink"], (0, 0, WINDOW_WIDTH, BATTLEFIELD_TOP))
@@ -403,17 +461,17 @@ class Level2Game:
             False,
             (126, 235, 176) if self.hand_controller.hand_detected else (181, 224, 205),
         )
-        self.screen.blit(title, (34, 22))
-        self.screen.blit(instructions, (35, 69))
-        self.screen.blit(lane_text, (WINDOW_WIDTH - lane_text.get_width() - 38, 35))
-        self.screen.blit(hand_text, (WINDOW_WIDTH - hand_text.get_width() - 38, 78))
-        draw_pixel_badge(self.screen, pygame.Rect(34, 88, 112, 24), self.plant_data.plant_type.upper(), fill=PALETTE["green"])
+        self.screen.blit(title, (34, 14))
+        self.screen.blit(instructions, (35, 53))
+        self.screen.blit(lane_text, (WINDOW_WIDTH - lane_text.get_width() - 38, 24))
+        self.screen.blit(hand_text, (WINDOW_WIDTH - hand_text.get_width() - 38, 64))
+        draw_pixel_badge(self.screen, pygame.Rect(34, 72, 112, 22), self.plant_data.plant_type.upper(), fill=PALETTE["green"])
         indicator_x = WINDOW_WIDTH - 184
         for lane_index in range(LANE_COUNT):
             selected = self.hand_controller.hand_detected and self.player.lane_index == lane_index
             color = (126, 235, 176) if selected else (86, 117, 98)
-            pygame.draw.rect(self.screen, PALETTE["deep_ink"], (indicator_x + lane_index * 24 - 7, 101, 14, 14))
-            pygame.draw.rect(self.screen, color, (indicator_x + lane_index * 24 - 5, 103, 10, 10))
+            pygame.draw.rect(self.screen, PALETTE["deep_ink"], (indicator_x + lane_index * 24 - 7, 82, 14, 14))
+            pygame.draw.rect(self.screen, color, (indicator_x + lane_index * 24 - 5, 84, 10, 10))
 
     def _draw_battlefield(self) -> None:
         battlefield_width = WINDOW_WIDTH - HOUSE_WIDTH
@@ -421,13 +479,14 @@ class Level2Game:
         for lane_index in range(LANE_COUNT):
             lane_rect = pygame.Rect(
                 HOUSE_WIDTH,
-                BATTLEFIELD_TOP + lane_index * LANE_HEIGHT,
+                LANE_TOP + lane_index * LANE_HEIGHT,
                 battlefield_width,
                 LANE_HEIGHT,
             )
-            pygame.draw.rect(self.screen, LANE_COLORS[lane_index % 2], lane_rect)
-            pygame.draw.rect(self.screen, (113, 170, 94), (lane_rect.left, lane_rect.top, lane_rect.width, 4))
-            pygame.draw.rect(self.screen, (67, 117, 70), (lane_rect.left, lane_rect.bottom - 5, lane_rect.width, 5))
+            if self.background is None:
+                pygame.draw.rect(self.screen, LANE_COLORS[lane_index % 2], lane_rect)
+                pygame.draw.rect(self.screen, (113, 170, 94), (lane_rect.left, lane_rect.top, lane_rect.width, 4))
+                pygame.draw.rect(self.screen, (67, 117, 70), (lane_rect.left, lane_rect.bottom - 5, lane_rect.width, 5))
 
             # Show the plant's current lane while gesture control is active.
             selected_lane = self.player.lane_index if self.hand_controller.hand_detected else None
@@ -440,27 +499,31 @@ class Level2Game:
             for x in range(HOUSE_WIDTH + 65, WINDOW_WIDTH, 150):
                 tuft_x = x + (lane_index % 2) * 28
                 tuft_y = lane_rect.centery + ((x // 150 + lane_index) % 3 - 1) * 24
-                pygame.draw.line(self.screen, (68, 127, 70), (tuft_x, tuft_y), (tuft_x - 4, tuft_y - 7), 2)
-                pygame.draw.line(self.screen, (68, 127, 70), (tuft_x, tuft_y), (tuft_x + 4, tuft_y - 7), 2)
-                pygame.draw.rect(self.screen, (74, 132, 70), (tuft_x + 16, lane_rect.top + 18 + (x // 75) % 28, 5, 3))
+                if self.background is None:
+                    pygame.draw.line(self.screen, (68, 127, 70), (tuft_x, tuft_y), (tuft_x - 4, tuft_y - 7), 2)
+                    pygame.draw.line(self.screen, (68, 127, 70), (tuft_x, tuft_y), (tuft_x + 4, tuft_y - 7), 2)
+                    pygame.draw.rect(self.screen, (74, 132, 70), (tuft_x + 16, lane_rect.top + 18 + (x // 75) % 28, 5, 3))
                 # Alternating seedling clumps add a little garden life behind
                 # the moving zombies without competing with their silhouettes.
-                if (x // 150 + lane_index) % 2 == 0:
+                if self.background is None and (x // 150 + lane_index) % 2 == 0:
                     crop_x = x + 52
                     crop_y = lane_rect.bottom - 25
                     pygame.draw.rect(self.screen, (58, 112, 66), (crop_x, crop_y, 4, 16))
                     pygame.draw.rect(self.screen, (91, 165, 72), (crop_x - 7, crop_y + 4, 10, 5))
                     pygame.draw.rect(self.screen, (91, 165, 72), (crop_x + 3, crop_y - 1, 10, 5))
                     pygame.draw.rect(self.screen, (235, 177, 73), (crop_x + 1, crop_y - 7, 5, 5))
-            pygame.draw.line(
-                self.screen,
-                LANE_LINE_COLOR,
-                lane_rect.bottomleft,
-                lane_rect.bottomright,
-                2,
-            )
+            if self.background is None:
+                pygame.draw.line(
+                    self.screen,
+                    LANE_LINE_COLOR,
+                    lane_rect.bottomleft,
+                    lane_rect.bottomright,
+                    2,
+                )
 
     def _draw_house(self) -> None:
+        if self.background is not None:
+            return
         house_body = pygame.Rect(18, BATTLEFIELD_TOP + 145, 112, 220)
         pygame.draw.rect(self.screen, PALETTE["deep_ink"], house_body.move(5, 5))
         pygame.draw.rect(self.screen, HOUSE_COLOR, house_body)
@@ -499,33 +562,115 @@ class Level2Game:
             )
 
     def _draw_rail(self) -> None:
-        x = self.player.rect.centerx
+        """Draw a receding timber lift aligned with the farm's field edge."""
+        stops = [(lane_x(index), lane_center_y(index)) for index in range(LANE_COUNT)]
+        top = (stops[0][0], stops[0][1] - 45)
+        bottom = (stops[-1][0], stops[-1][1] + 45)
+
+        # The guide is a segmented timber leaning left toward the viewer.  Its
+        # direction follows the field edge instead of reading as a vertical UI
+        # element, and its dark offset grounds it against the grass.
         pygame.draw.line(
             self.screen,
-            (44, 53, 43),
-            (x + 5, lane_center_y(0)),
-            (x + 5, lane_center_y(LANE_COUNT - 1)),
-            14,
+            (47, 48, 34),
+            (top[0] + 7, top[1] + 4),
+            (bottom[0] + 7, bottom[1] + 4),
+            16,
+        )
+        pygame.draw.line(self.screen, (91, 61, 39), top, bottom, 12)
+        pygame.draw.line(
+            self.screen,
+            (154, 96, 48),
+            (top[0] - 2, top[1] + 2),
+            (bottom[0] - 2, bottom[1] - 2),
+            5,
         )
         pygame.draw.line(
             self.screen,
-            RAIL_COLOR,
-            (x, lane_center_y(0)),
-            (x, lane_center_y(LANE_COUNT - 1)),
-            10,
+            (205, 139, 67),
+            (top[0] - 4, top[1] + 5),
+            (bottom[0] - 4, bottom[1] - 5),
+            2,
         )
-        for lane_index in range(LANE_COUNT):
-            pygame.draw.rect(
+
+        for lane_index, (x, y) in enumerate(stops):
+            # Foreground shelves grow wider/deeper, following the same visual
+            # scale change as the rows of the illustrated field.
+            perspective = lane_index / max(1, LANE_COUNT - 1)
+            half_width = round(25 + perspective * 13)
+            shelf_depth = round(8 + perspective * 4)
+            shelf_top = y + 24
+            pygame.draw.polygon(
                 self.screen,
-                (52, 43, 39),
-                (x - 12, lane_center_y(lane_index) - 12, 24, 24),
+                (52, 48, 34),
+                (
+                    (x - half_width - 4, shelf_top + 5),
+                    (x + half_width + 4, shelf_top + 5),
+                    (x + half_width + 7, shelf_top + shelf_depth + 5),
+                    (x - half_width - 7, shelf_top + shelf_depth + 5),
+                ),
+            )
+            pygame.draw.polygon(
+                self.screen,
+                (101, 65, 40),
+                (
+                    (x - half_width, shelf_top),
+                    (x + half_width, shelf_top),
+                    (x + half_width + 3, shelf_top + shelf_depth),
+                    (x - half_width - 3, shelf_top + shelf_depth),
+                ),
+            )
+            pygame.draw.line(
+                self.screen,
+                (205, 139, 67),
+                (x - half_width + 3, shelf_top + 2),
+                (x + half_width - 3, shelf_top + 2),
+                3,
+            )
+
+            # A small bracket marks the stop; it also grows subtly toward the
+            # viewer instead of repeating identical square blocks.
+            bracket_width = round(26 + perspective * 8)
+            bracket_height = round(14 + perspective * 3)
+            bracket = pygame.Rect(
+                x - bracket_width // 2,
+                y - bracket_height // 2,
+                bracket_width,
+                bracket_height,
+            )
+            pygame.draw.rect(self.screen, (52, 48, 34), bracket.inflate(6, 6))
+            pygame.draw.rect(self.screen, (139, 88, 46), bracket)
+            pygame.draw.line(
+                self.screen,
+                (228, 174, 88),
+                (bracket.left + 5, bracket.top + 3),
+                (bracket.right - 5, bracket.top + 3),
+                2,
             )
             pygame.draw.rect(
                 self.screen,
-                (219, 199, 137),
-                (x - 8, lane_center_y(lane_index) - 8, 16, 16),
+                (74, 54, 38),
+                (x - 3, bracket.centery - 2, 7, 5),
             )
-            pygame.draw.rect(self.screen, (247, 227, 161), (x - 5, lane_center_y(lane_index) - 5, 6, 3))
+
+        # Sparse greenery hides the base of the structure and ties it into the
+        # vegetation along the left boundary.
+        for lane_index, (x, y) in enumerate(stops[::2]):
+            side = -1 if lane_index % 2 == 0 else 1
+            pygame.draw.rect(self.screen, (42, 91, 48), (x + side * 29, y + 32, 8, 5))
+            pygame.draw.rect(self.screen, (87, 139, 61), (x + side * 33, y + 27, 7, 5))
+
+    def _draw_foreground_fence(self) -> None:
+        """Restore the illustrated foreground fence over the lift's lower end."""
+        if self.background is None:
+            return
+
+        # Re-blit the exact matching background pixels instead of drawing a
+        # second approximate fence.  This preserves the original posts,
+        # flowers, and foliage while naturally occluding the bottom rail.
+        height = WINDOW_HEIGHT - FOREGROUND_FENCE_TOP
+        source = pygame.Rect(0, FOREGROUND_FENCE_TOP, FOREGROUND_FENCE_WIDTH, height)
+        self.screen.blit(self.background, source.topleft, source)
 
     def _draw_hand_target(self) -> None:
         """Show the currently recognized index-finger direction."""
