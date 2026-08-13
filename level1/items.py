@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import random
+from typing import Literal
 
 import pygame
 
@@ -12,10 +14,15 @@ from shared_game_data import ElementType
 from .config import (
     ITEM_HIGH_CENTER_Y,
     ITEM_LOW_CENTER_Y,
+    AIR_ITEM_CENTER_Y,
+    ITEM_COLLECT_ANIMATION_DURATION,
     ITEM_MIN_PROBABILITY,
     ITEM_PAIR_INTERVAL,
     ITEM_SIZE,
     ITEM_WEIGHT_DECAY,
+    PLATFORM_ITEM_CHANCE,
+    PLATFORM_ITEM_LOOKAHEAD,
+    RANDOM_ITEM_X_OFFSET,
     WINDOW_WIDTH,
 )
 
@@ -46,6 +53,8 @@ ELEMENT_LABELS: dict[ElementType, str] = {
     "potassium": "K",
     "pesticide": "SPRAY",
 }
+
+PickupSurface = Literal["ground", "platform", "air"]
 
 
 def _draw_element_icon_legacy(
@@ -412,6 +421,54 @@ def draw_element_icon(
     surface.blit(scaled, target.topleft)
 
 
+def draw_collect_break(surface: pygame.Surface, item: "Collectible") -> None:
+    """Draw a short pixel-shard burst for a collected element."""
+    progress = 1.0 - item.collect_remaining / ITEM_COLLECT_ANIMATION_DURATION
+    progress = max(0.0, min(1.0, progress))
+    rect = item.rect
+    sprite = pygame.Surface(rect.size, pygame.SRCALPHA)
+    draw_element_icon(sprite, item.element, sprite.get_rect())
+
+    # Four pieces of the original sprite fly away from the pickup's center.
+    half = rect.width // 2
+    pieces = (
+        (pygame.Rect(0, 0, half, half), (-1.0, -0.7)),
+        (pygame.Rect(half, 0, rect.width - half, half), (1.0, -0.9)),
+        (pygame.Rect(0, half, half, rect.height - half), (-1.2, 0.9)),
+        (pygame.Rect(half, half, rect.width - half, rect.height - half), (1.2, 0.8)),
+    )
+    if progress < 0.22:
+        surface.blit(sprite, rect.topleft)
+    else:
+        alpha = round(255 * (1.0 - progress))
+        for area, (direction_x, direction_y) in pieces:
+            fragment = pygame.Surface(area.size, pygame.SRCALPHA)
+            fragment.blit(sprite, (0, 0), area)
+            fragment.set_alpha(alpha)
+            distance = 5.0 + progress * 18.0
+            destination = (
+                round(rect.left + area.left + direction_x * distance),
+                round(rect.top + area.top + direction_y * distance),
+            )
+            surface.blit(fragment, destination)
+
+    burst_color = (255, 238, 169, alpha if progress >= 0.22 else 255)
+    center_x, center_y = rect.center
+    burst_distance = 8 + round(progress * 18)
+    for direction_x, direction_y, width, height in (
+        (-1, -1, 3, 3), (1, -1, 4, 3), (-1, 1, 3, 4), (1, 1, 3, 3),
+    ):
+        burst = pygame.Surface((width, height), pygame.SRCALPHA)
+        burst.fill(burst_color)
+        surface.blit(
+            burst,
+            (
+                center_x + direction_x * burst_distance - width // 2,
+                center_y + direction_y * burst_distance - height // 2,
+            ),
+        )
+
+
 class AdaptiveElementSampler:
     def __init__(self, rng: random.Random | None = None) -> None:
         self.rng = rng or random.Random()
@@ -477,6 +534,14 @@ class Collectible:
     element: ElementType
     pair_id: int
     size: int = ITEM_SIZE
+    surface: PickupSurface | None = None
+    collect_remaining: float = 0.0
+
+    def __post_init__(self) -> None:
+        # Keep direct/scripted construction compatible with the old high/low
+        # item API while making the live game route explicit.
+        if self.surface is None:
+            self.surface = "air" if self.center_y <= ITEM_HIGH_CENTER_Y else "ground"
 
     @property
     def rect(self) -> pygame.Rect:
@@ -496,10 +561,17 @@ class Collectible:
 
 
 class ItemManager:
-    def __init__(self, rng: random.Random | None = None) -> None:
+    def __init__(
+        self,
+        rng: random.Random | None = None,
+        *,
+        randomized_layout: bool = False,
+    ) -> None:
         self.rng = rng or random.Random()
+        self.randomized_layout = randomized_layout
         self.sampler = AdaptiveElementSampler(self.rng)
         self.items: list[Collectible] = []
+        self.collecting_items: list[Collectible] = []
         self.spawn_remaining = ITEM_PAIR_INTERVAL * 0.65
         self._next_pair_id = 1
 
@@ -509,32 +581,104 @@ class ItemManager:
         speed: float,
         *,
         can_spawn: bool = True,
+        platforms: Iterable[pygame.Rect] = (),
     ) -> tuple[Collectible, Collectible] | None:
+        platforms = tuple(platforms)
         for item in self.items:
             item.update(dt, speed)
         self.items = [item for item in self.items if not item.is_offscreen]
+        for item in self.collecting_items:
+            item.update(dt, speed)
+            item.collect_remaining = max(0.0, item.collect_remaining - dt)
+        self.collecting_items = [
+            item for item in self.collecting_items if item.collect_remaining > 0.0
+        ]
 
         spawned_pair = None
         self.spawn_remaining -= dt
         if self.spawn_remaining <= 0.0 and can_spawn:
-            spawned_pair = self.spawn_pair()
+            spawned_pair = self.spawn_pair(platforms)
             self.spawn_remaining = ITEM_PAIR_INTERVAL
         elif self.spawn_remaining < 0.0:
             self.spawn_remaining = 0.0
         return spawned_pair
 
-    def spawn_pair(self) -> tuple[Collectible, Collectible]:
+    def spawn_pair(
+        self,
+        platforms: Iterable[pygame.Rect] = (),
+    ) -> tuple[Collectible, Collectible]:
         high_element, low_element = self.sampler.draw_pair()
         pair_id = self._next_pair_id
         self._next_pair_id += 1
-        high = Collectible(
-            float(WINDOW_WIDTH + 25), ITEM_HIGH_CENTER_Y, high_element, pair_id
-        )
-        low = Collectible(
-            float(WINDOW_WIDTH + 25), ITEM_LOW_CENTER_Y, low_element, pair_id
-        )
+        if self.randomized_layout:
+            base_x = float(WINDOW_WIDTH + 25)
+            air_x = base_x + self.rng.randint(0, RANDOM_ITEM_X_OFFSET)
+            air_y = self.rng.choice(AIR_ITEM_CENTER_Y)
+            platform_choices = [
+                platform
+                for platform in platforms
+                if platform.right >= base_x
+                and platform.left <= base_x + PLATFORM_ITEM_LOOKAHEAD
+                and platform.right - ITEM_SIZE >= base_x
+                and platform.width >= ITEM_SIZE
+            ]
+            if platform_choices and self.rng.random() < PLATFORM_ITEM_CHANCE:
+                platform = self.rng.choice(platform_choices)
+                min_x = max(round(base_x), platform.left)
+                max_x = min(
+                    round(base_x + PLATFORM_ITEM_LOOKAHEAD),
+                    platform.right - ITEM_SIZE,
+                )
+                platform_x = self.rng.randint(min_x, max_x)
+                first = Collectible(
+                    float(platform_x),
+                    platform.top - ITEM_SIZE // 2,
+                    high_element,
+                    pair_id,
+                    surface="platform",
+                )
+            else:
+                first = Collectible(
+                    base_x + self.rng.randint(0, RANDOM_ITEM_X_OFFSET),
+                    ITEM_LOW_CENTER_Y,
+                    high_element,
+                    pair_id,
+                    surface="ground",
+                )
+            second = Collectible(
+                float(air_x),
+                air_y,
+                low_element,
+                pair_id,
+                surface="air",
+            )
+        else:
+            first = Collectible(
+                float(WINDOW_WIDTH + 25),
+                ITEM_HIGH_CENTER_Y,
+                high_element,
+                pair_id,
+                surface="air",
+            )
+            second = Collectible(
+                float(WINDOW_WIDTH + 25),
+                ITEM_LOW_CENTER_Y,
+                low_element,
+                pair_id,
+                surface="ground",
+            )
+        high, low = first, second
         self.items.extend((high, low))
         return high, low
+
+    def collect_item(self, item: Collectible) -> bool:
+        """Remove only the selected item and keep its pair visible."""
+        if item not in self.items:
+            return False
+        self.items.remove(item)
+        item.collect_remaining = ITEM_COLLECT_ANIMATION_DURATION
+        self.collecting_items.append(item)
+        return True
 
     def remove_pair(self, pair_id: int) -> None:
         self.items = [item for item in self.items if item.pair_id != pair_id]

@@ -47,6 +47,24 @@ ITEM_HIGH_CENTER_Y = 360
 ITEM_SIZE = 42
 ITEM_OBSTACLE_CLEARANCE = 360.0
 
+# Collectibles can appear on the ground, on a low ledge, or high in the air.
+# The old high/low constants remain available for compatibility with tests and
+# scripted callers; the live game enables the randomized layout.
+RANDOM_ITEM_Y = (332, 382, 438, 486)
+RANDOM_ITEM_X_OFFSET = 24
+# Air-route pickups sit above the running lane.  Both heights are reachable
+# with a jump, while remaining clearly separated from the ground pickup.
+AIR_ITEM_CENTER_Y = (332, 382)
+PLATFORM_ITEM_CHANCE = 0.62
+PLATFORM_ITEM_LOOKAHEAD = 180
+ITEM_COLLECT_ANIMATION_DURATION = 0.38
+
+# Floating ledges add a second traversal layer without changing the floor
+# collision contract used by the existing runner.
+AIR_PLATFORM_Y = (330, 382, 432, 462)
+AIR_PLATFORM_WIDTHS = (94, 118, 142)
+AIR_PLATFORM_MIN_GAP = 115
+
 AUDIO_SAMPLE_RATE = 44100
 SOUND_EFFECT_VOLUME = 0.48
 MUSIC_VOLUME = 0.18

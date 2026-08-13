@@ -110,10 +110,10 @@ real object from `analyze_plant(image_path)`. Level one lasts 40 seconds.
 
 Controls:
 
-- Camera: raise only the left hand to jump; raise only the right hand to slide;
-  raising both hands does not trigger an action
-- Up: jump
-- Down: slide
+- At the start of Level 1, choose Keyboard or Camera Pose control.
+- Keyboard: W jump/up, S crouch on the ground or drop/down from a floating platform, A crouch, D big jump
+- Camera Pose: raise only the left hand to jump; raise only the right hand to
+  crouch; raising both hands does not trigger an action
 - M: mute / unmute sound effects and background music
 - Escape: return an incomplete result and close the level
 
@@ -143,11 +143,15 @@ inject an alternate callable through `action_provider`.
 
 Pose input uses the MediaPipe Lite model at
 `assets/models/pose_landmarker.task`. Keyboard control remains available when
-the camera cannot be opened. Jumping and sliding use the same fast pose profile:
+the camera cannot be opened. Each live element pair now offers one running-lane
+pickup and one air-route pickup; platform pickups are attached to the passing
+floating platforms. Air pickups can only be collected while jumping, while
+ground/platform pickups can only be collected while standing on their route.
+Collected elements briefly break into pixel shards; untouched pair members stay
+visible. The runner also has moving air platforms that can be landed on and
+dropped through with S. Jumping and sliding use the same fast pose profile:
 the active wrist may be `0.03` below shoulder height, visibility may be `0.35`,
-and one valid frame triggers the action. The course has one floor and no double
-or big jump. Each element pair appears at separate high and low positions on
-that track. Obstacles and element pairs keep at least `360` horizontal pixels
-apart, so an obstacle cannot force one of the two element choices. Camera
+and one valid frame triggers the action. Obstacles and element pairs keep at
+least `360` horizontal pixels apart, so an obstacle cannot force one of the two element choices. Camera
 capture and pose inference run on background workers; the Pygame loop only
 consumes queued action events and remains near its 60 FPS target.

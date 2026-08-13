@@ -10,6 +10,9 @@ import pygame
 
 from .config import (
     FLOOR_HEIGHT,
+    AIR_PLATFORM_MIN_GAP,
+    AIR_PLATFORM_WIDTHS,
+    AIR_PLATFORM_Y,
     LOWER_FLOOR_Y,
     OBSTACLE_CLUSTER_GAP,
     SLIDE_OBSTACLE_BOTTOM,
@@ -48,6 +51,61 @@ class Obstacle:
     @property
     def is_offscreen(self) -> bool:
         return self.x + self.width < 0
+
+
+@dataclass
+class AirPlatform:
+    x: float
+    y: int
+    width: int
+    height: int = 12
+
+    @property
+    def rect(self) -> pygame.Rect:
+        return pygame.Rect(round(self.x), self.y, self.width, self.height)
+
+    def update(self, dt: float, speed: float) -> None:
+        self.x -= speed * dt
+
+    @property
+    def is_offscreen(self) -> bool:
+        return self.x + self.width < 0
+
+
+class AirPlatformManager:
+    """Generate spaced, moving ledges for the richer sky route."""
+
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self.rng = rng or random.Random()
+        self.platforms: list[AirPlatform] = []
+        self.platforms.extend(
+            (
+                AirPlatform(255.0, 382, 118),
+                AirPlatform(520.0, 330, 94),
+                AirPlatform(760.0, 432, 142),
+            )
+        )
+        self.spawn_remaining = 1.8
+
+    def update(self, dt: float, speed: float) -> list[AirPlatform]:
+        self.spawn_remaining -= dt
+        spawned: list[AirPlatform] = []
+        if self.spawn_remaining <= 0.0:
+            platform = self.spawn()
+            spawned.append(platform)
+            self.spawn_remaining = self.rng.uniform(1.9, 3.0)
+        for platform in self.platforms:
+            platform.update(dt, speed)
+        self.platforms = [item for item in self.platforms if not item.is_offscreen]
+        return spawned
+
+    def spawn(self) -> AirPlatform:
+        width = self.rng.choice(AIR_PLATFORM_WIDTHS)
+        y = self.rng.choice(AIR_PLATFORM_Y)
+        x = float(WINDOW_WIDTH + self.rng.randint(AIR_PLATFORM_MIN_GAP, AIR_PLATFORM_MIN_GAP + 150))
+        platform = AirPlatform(x, y, width)
+        self.platforms.append(platform)
+        return platform
 
 
 class ObstacleManager:
@@ -131,9 +189,10 @@ class ObstacleManager:
 
 
 class ScrollingMap:
-    def __init__(self) -> None:
+    def __init__(self, rng: random.Random | None = None) -> None:
         self.offset = 0.0
         self.background = self._load_background()
+        self.air_platforms = AirPlatformManager(rng)
 
     @staticmethod
     def _load_background() -> pygame.Surface | None:
@@ -160,6 +219,7 @@ class ScrollingMap:
 
     def update(self, dt: float, speed: float) -> None:
         self.offset = (self.offset + speed * dt) % 80.0
+        self.air_platforms.update(dt, speed)
 
     def draw(self, surface: pygame.Surface) -> None:
         if self.background is not None:
@@ -168,6 +228,20 @@ class ScrollingMap:
             surface.fill((69, 157, 202))
             self._draw_fallback_hills(surface)
         self._draw_playable_floor(surface, LOWER_FLOOR_Y)
+        for platform in self.air_platforms.platforms:
+            self._draw_air_platform(surface, platform)
+
+    @staticmethod
+    def _draw_air_platform(surface: pygame.Surface, platform: AirPlatform) -> None:
+        rect = platform.rect
+        pygame.draw.rect(surface, (45, 31, 27), rect.move(4, 5))
+        pygame.draw.rect(surface, (84, 49, 34), (rect.left, rect.top + 7, rect.width, rect.height + 13))
+        pygame.draw.rect(surface, (108, 65, 39), (rect.left + 7, rect.top + 10, rect.width - 14, 10))
+        pygame.draw.rect(surface, (93, 162, 67), (rect.left, rect.top, rect.width, 11))
+        pygame.draw.rect(surface, (186, 222, 104), (rect.left + 4, rect.top, rect.width - 8, 4))
+        for x in range(rect.left + 12, rect.right - 8, 24):
+            pygame.draw.rect(surface, (142, 194, 79), (x, rect.top + 5, 9, 3))
+            pygame.draw.rect(surface, (154, 96, 54), (x + 3, rect.top + 14, 7, 5))
 
     def _draw_fallback_hills(self, surface: pygame.Surface) -> None:
         for hill_x, hill_width, hill_height in ((-40, 300, 86), (210, 340, 112), (520, 300, 76), (760, 320, 104)):

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import random
 import unittest
 
+import pygame
+
 from shared_game_data import PlantData, PlantStatus, calculate_power
 
 from level1.audio import _collect_pcm, _hurt_pcm, _music_pcm
@@ -124,6 +126,31 @@ class AudioTests(unittest.TestCase):
 
 
 class PlayerTests(unittest.TestCase):
+    def test_down_crouches_on_the_floor(self) -> None:
+        player = Player()
+        self.assertTrue(player.drop())
+        self.assertTrue(player.crouching)
+        self.assertTrue(player.grounded)
+
+    def test_big_jump_has_more_vertical_velocity_than_normal_jump(self) -> None:
+        normal = Player()
+        large = Player()
+        self.assertTrue(normal.jump())
+        self.assertTrue(large.big_jump())
+        self.assertLess(large.velocity_y, normal.velocity_y)
+
+    def test_player_can_land_on_and_drop_from_air_platform(self) -> None:
+        player = Player()
+        platform = pygame.Rect(player.x - 5, 382, 100, 12)
+        self.assertTrue(player.big_jump())
+        for _ in range(90):
+            player.update(1.0 / 60.0, (platform,))
+            if player.grounded and player.support_y == platform.top:
+                break
+        self.assertEqual(player.support_y, platform.top)
+        self.assertTrue(player.drop())
+        self.assertIsNone(player.support_y)
+
     def test_airborne_player_cannot_jump_again(self) -> None:
         player = Player()
         self.assertTrue(player.jump())
@@ -206,6 +233,32 @@ class ItemTests(unittest.TestCase):
         self.assertEqual(high.x, low.x)
         self.assertLess(high.rect.bottom + 78, low.rect.top)
 
+    def test_randomized_pair_uses_different_spawn_positions(self) -> None:
+        high, low = ItemManager(random.Random(5), randomized_layout=True).spawn_pair()
+        self.assertIn(high.center_y, (332, 382, 438, 486))
+        self.assertIn(low.center_y, (332, 382, 438, 486))
+        self.assertNotEqual((high.x, high.center_y), (low.x, low.center_y))
+
+    def test_live_pair_has_one_air_route_and_one_ground_route(self) -> None:
+        high, low = ItemManager(random.Random(9), randomized_layout=True).spawn_pair()
+        self.assertIn(high.surface, {"ground", "platform"})
+        self.assertEqual(low.surface, "air")
+
+    def test_live_pair_can_attach_lane_pickup_to_a_floating_platform(self) -> None:
+        platform = pygame.Rect(850, 382, 118, 12)
+        high, low = ItemManager(random.Random(0), randomized_layout=True).spawn_pair((platform,))
+        self.assertEqual(high.surface, "platform")
+        self.assertEqual(high.rect.bottom, platform.top)
+        self.assertEqual(low.surface, "air")
+
+    def test_collect_animation_expires_without_removing_other_items(self) -> None:
+        manager = ItemManager(random.Random(3))
+        first, second = manager.spawn_pair()
+        self.assertTrue(manager.collect_item(first))
+        self.assertEqual(manager.items, [second])
+        manager.update(0.39, 240.0)
+        self.assertEqual(manager.collecting_items, [])
+
     def test_due_pair_waits_until_spawn_window_is_clear(self) -> None:
         manager = ItemManager(random.Random(6))
         manager.spawn_remaining = 0.0
@@ -242,7 +295,8 @@ class GameStateTests(unittest.TestCase):
         game.items.items = [first, second]
         game._resolve_collisions()
         self.assertEqual(game.collected["water"], 1)
-        self.assertEqual(game.items.items, [])
+        self.assertEqual(len(game.items.items), 1)
+        self.assertEqual(len(game.items.collecting_items), 1)
         self.assertGreater(plant.status.water, 0.5)
         self.assertEqual(game.consume_audio_events(), [("collect", "water")])
         self.assertEqual(game.consume_audio_events(), [])
@@ -265,7 +319,26 @@ class GameStateTests(unittest.TestCase):
         self.assertFalse(game.player.rect.colliderect(low.rect))
         game._resolve_collisions()
         self.assertEqual(game.collected["light"], 1)
-        self.assertEqual(game.items.items, [])
+        self.assertEqual(len(game.items.items), 1)
+        self.assertEqual(len(game.items.collecting_items), 1)
+
+    def test_route_rules_block_wrong_collection_state(self) -> None:
+        game = Level1Game(make_plant(), rng=random.Random(13))
+        ground = Collectible(game.player.x, ITEM_LOW_CENTER_Y, "water", 201, surface="ground")
+        air = Collectible(game.player.x, ITEM_HIGH_CENTER_Y, "light", 202, surface="air")
+        game.items.items = [ground, air]
+        game.player.jump()
+        for _ in range(60):
+            game.player.update(1.0 / 60.0)
+            if game.player.rect.colliderect(air.rect):
+                break
+        game._resolve_collisions()
+        self.assertEqual(game.collected["water"], 0)
+        self.assertEqual(game.collected["light"], 1)
+        game.player._land()
+        game.items.items = [ground]
+        game._resolve_collisions()
+        self.assertEqual(game.collected["water"], 1)
 
     def test_item_pair_does_not_spawn_beside_obstacle(self) -> None:
         game = Level1Game(make_plant(), rng=random.Random(10))

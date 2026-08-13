@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
 import random
+from typing import Literal
 
 import pygame
 
@@ -33,9 +34,17 @@ from .config import (
     TIME_LIMIT,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
+    RANDOM_ITEM_X_OFFSET,
+    PLATFORM_ITEM_LOOKAHEAD,
     scroll_speed_at,
 )
-from .items import ELEMENT_TYPES, Collectible, ItemManager, draw_element_icon
+from .items import (
+    ELEMENT_TYPES,
+    Collectible,
+    ItemManager,
+    draw_collect_break,
+    draw_element_icon,
+)
 from .map import Obstacle, ObstacleManager, ScrollingMap
 from .player import Player
 from vision.camera_pose_input import CameraPoseInput
@@ -54,6 +63,7 @@ from ui.pixel_style import (
 
 
 ActionProvider = Callable[[], PoseAction]
+ControlMode = Literal["keyboard", "camera"]
 STATUS_FIELDS = ("water", "light", "nitrogen", "phosphorus", "potassium")
 
 
@@ -115,9 +125,13 @@ class Level1Game:
         self.plant = plant
         self.rng = rng or random.Random()
         self.player = Player()
+        # Keep the obstacle RNG contract deterministic for scripted tests and
+        # let the visual platform layer own its independent random stream.
         self.world = ScrollingMap()
         self.obstacles = ObstacleManager(self.rng)
-        self.items = ItemManager(self.rng)
+        # Item placement is intentionally independent from obstacle RNG so
+        # adding randomized collectibles cannot change obstacle difficulty.
+        self.items = ItemManager(random.Random(), randomized_layout=True)
 
         self.elapsed = 0.0
         self.power_before = plant.current_power
@@ -134,11 +148,15 @@ class Level1Game:
     def scroll_speed(self) -> float:
         return scroll_speed_at(self.elapsed)
 
-    def handle_action(self, action: GestureAction) -> bool:
+    def handle_action(self, action: GestureAction | str) -> bool:
         if action == "jump":
             return self.player.jump()
+        if action == "big_jump":
+            return self.player.big_jump()
         if action == "crouch":
             return self.player.slide()
+        if action == "drop":
+            return self.player.drop()
         return False
 
     def update(self, dt: float, actions: Iterable[GestureAction] = ()) -> None:
@@ -156,8 +174,9 @@ class Level1Game:
         new_obstacles = self.obstacles.update(dt, self.elapsed, speed)
         self._reject_clumped_obstacles(new_obstacles)
         item_spawn_due = self.items.spawn_remaining <= dt
+        platforms = tuple(platform.rect for platform in self.world.air_platforms.platforms)
         can_spawn_item = (
-            self._reserve_item_spawn_window(speed)
+            self._reserve_item_spawn_window(speed, platforms=platforms)
             if item_spawn_due
             else True
         )
@@ -165,8 +184,9 @@ class Level1Game:
             dt,
             speed,
             can_spawn=can_spawn_item,
+            platforms=platforms,
         )
-        self.player.update(dt)
+        self.player.update(dt, platforms)
         self._resolve_collisions()
 
         if self.elapsed >= TIME_LIMIT or self.player.hp <= 0:
@@ -220,18 +240,36 @@ class Level1Game:
                     else None
                 )
 
-    def _reserve_item_spawn_window(self, speed: float) -> bool:
+    def _reserve_item_spawn_window(
+        self,
+        speed: float,
+        *,
+        platforms: Iterable[pygame.Rect] = (),
+    ) -> bool:
         candidate_x = WINDOW_WIDTH + 25.0
-        if any(
-            _horizontal_gap(
-                candidate_x,
-                ITEM_SIZE,
-                obstacle.x,
-                obstacle.width,
-            ) < ITEM_OBSTACLE_CLEARANCE
-            for obstacle in self.obstacles.obstacles
-        ):
-            return False
+        spawn_bands = [
+            (candidate_x, candidate_x + RANDOM_ITEM_X_OFFSET + ITEM_SIZE)
+        ]
+        for platform in platforms:
+            if platform.right < candidate_x or platform.left > candidate_x + PLATFORM_ITEM_LOOKAHEAD:
+                continue
+            band_left = max(candidate_x, float(platform.left))
+            band_right = min(
+                candidate_x + PLATFORM_ITEM_LOOKAHEAD,
+                float(platform.right - ITEM_SIZE),
+            ) + ITEM_SIZE
+            if band_right >= band_left:
+                spawn_bands.append((band_left, band_right))
+
+        for obstacle in self.obstacles.obstacles:
+            obstacle_left = obstacle.x
+            obstacle_right = obstacle.x + obstacle.width
+            for spawn_left, spawn_right in spawn_bands:
+                if obstacle_right >= spawn_left and obstacle_left <= spawn_right:
+                    return False
+                gap = spawn_left - obstacle_right if obstacle_right < spawn_left else obstacle_left - spawn_right
+                if gap < ITEM_OBSTACLE_CLEARANCE:
+                    return False
 
         future_delays = [self.obstacles.spawn_remaining]
         if self.obstacles.cluster_remaining is not None:
@@ -239,6 +277,8 @@ class Level1Game:
         required_travel = (
             ITEM_OBSTACLE_CLEARANCE
             + ITEM_SIZE
+            + RANDOM_ITEM_X_OFFSET
+            + (PLATFORM_ITEM_LOOKAHEAD if len(spawn_bands) > 1 else 0)
             + 2.0 * max(speed, 1.0) / TARGET_FPS
         )
         required_delay = required_travel / max(speed, 1.0)
@@ -261,13 +301,27 @@ class Level1Game:
                 self.pest_hits += 1
                 self.audio_events.append(("hurt", None))
 
-        item_hits = all_collisions(player_rect, self.items.items)
+        item_hits = [
+            item
+            for item in self.items.items
+            if player_rect.colliderect(item.rect) and self._can_collect_item(item)
+        ]
         if item_hits:
             item = item_hits[0]
             apply_element(self.plant, item.element)
             self.collected[item.element] += 1
-            self.items.remove_pair(item.pair_id)
+            self.items.collect_item(item)
             self.audio_events.append(("collect", item.element))
+
+    def _can_collect_item(self, item: Collectible) -> bool:
+        """Enforce the route rule: air pickups need a jump, lane pickups do not."""
+        if item.surface == "air":
+            return not self.player.grounded
+        if not self.player.grounded:
+            return False
+        if item.surface == "platform":
+            return self.player.support_y is not None
+        return self.player.support_y is None
 
     def consume_audio_events(self) -> list[tuple[str, ElementType | None]]:
         events = self.audio_events
@@ -311,6 +365,8 @@ class Level1Game:
             self._draw_obstacle(surface, obstacle)
         for item in self.items.items:
             self._draw_item(surface, item)
+        for item in self.items.collecting_items:
+            draw_collect_break(surface, item)
         self._draw_player(surface)
         self._draw_hud(surface)
         self._draw_objective_banner(surface)
@@ -469,8 +525,19 @@ def run_level1(
     # Give a first-time player a short chance to check the controls.  The
     # headless/surface-injected path intentionally skips this modal screen so
     # it remains usable by automated callers without a display.
+    if owns_display and pygame.display.get_surface() is not None:
+        control_mode = _choose_level1_control(screen, allow_camera=use_camera)
+        if control_mode is None:
+            game.abort()
+            result = game.make_result()
+            if owns_display:
+                pygame.display.quit()
+            return result
+    else:
+        control_mode = "camera" if use_camera else "keyboard"
+
     if owns_display and _tutorial_enabled() and pygame.display.get_surface() is not None:
-        if not _show_level1_tutorial(screen):
+        if not _show_level1_tutorial(screen, control_mode):
             game.abort()
             result = game.make_result()
             if owns_display:
@@ -481,9 +548,14 @@ def run_level1(
     audio.start_music()
     camera_input = (
         CameraPoseInput.open_first()
-        if use_camera and action_provider is None
+        if control_mode == "camera" and action_provider is None
         else None
     )
+    if control_mode == "camera" and camera_input is None:
+        # A selected camera can disappear between the choice screen and the
+        # level loop. Keep the level playable instead of silently ignoring
+        # every keyboard event.
+        control_mode = "keyboard"
 
     try:
         while not game.finished:
@@ -495,12 +567,17 @@ def run_level1(
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         game.abort()
-                    elif event.key == pygame.K_UP:
-                        actions.append("jump")
-                    elif event.key == pygame.K_DOWN:
-                        actions.append("crouch")
                     elif event.key == pygame.K_m:
                         audio.toggle_mute()
+                    elif control_mode == "keyboard":
+                        if event.key == pygame.K_w:
+                            actions.append("jump")
+                        elif event.key == pygame.K_s:
+                            actions.append("drop")
+                        elif event.key == pygame.K_a:
+                            actions.append("crouch")
+                        elif event.key == pygame.K_d:
+                            actions.append("big_jump")
 
             if action_provider is not None:
                 action = action_provider()
@@ -517,9 +594,11 @@ def run_level1(
                     audio.play_collect(element)
                 elif event_name == "hurt":
                     audio.play_hurt()
-            status_panel_rect = pygame.Rect(568, 246 if use_camera else 62, 222, 248)
+            # Keep the keyboard-mode panel below the top HUD; camera mode
+            # stays lower because the camera preview occupies the upper right.
+            status_panel_rect = pygame.Rect(568, 246 if control_mode == "camera" else 84, 222, 248)
             game.draw(screen, status_panel_rect=status_panel_rect)
-            _draw_camera_overlay(screen, camera_input, use_camera)
+            _draw_camera_overlay(screen, camera_input, control_mode == "camera")
             # ``screen`` may be an off-screen Surface supplied by a test or a
             # host application.  Only flip when Pygame owns an actual display.
             if pygame.display.get_surface() is not None:
@@ -542,16 +621,83 @@ def _tutorial_enabled() -> bool:
     return os.environ.get("PLANT_GAME_SKIP_TUTORIAL") not in {"1", "true", "TRUE"}
 
 
-def _show_level1_tutorial(surface: pygame.Surface) -> bool:
+def _choose_level1_control(
+    surface: pygame.Surface,
+    *,
+    allow_camera: bool = True,
+) -> ControlMode | None:
+    """Let the player choose keyboard or camera control before the tutorial."""
+    clock = pygame.time.Clock()
+    title_font = pygame.font.Font(None, 42)
+    body_font = pygame.font.Font(None, 24)
+    selected = 0
+    options = ("keyboard", "camera") if allow_camera else ("keyboard",)
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return None
+            if event.type != pygame.KEYDOWN:
+                continue
+            if len(options) > 1 and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_a, pygame.K_d):
+                selected = 1 - selected
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                return options[selected]
+            elif event.key == pygame.K_ESCAPE:
+                return None
+
+        draw_pixel_backdrop(surface, base=(92, 160, 184), horizon=540)
+        pygame.draw.rect(surface, (62, 110, 70), (0, 540, WINDOW_WIDTH, 60))
+        panel = pygame.Rect(64, 72, 672, 420)
+        draw_pixel_wood_frame(surface, panel, fill=(29, 31, 29))
+        title = title_font.render("CHOOSE CONTROL METHOD", False, PALETTE["gold_light"])
+        surface.blit(title, title.get_rect(center=(400, 120)))
+        hint = body_font.render("LEFT / RIGHT SELECT     ENTER CONFIRM     ESC CANCEL", False, PALETTE["muted_cream"])
+        surface.blit(hint, hint.get_rect(center=(400, 158)))
+        camera_lines = (
+            "LEFT HAND UP  JUMP",
+            "RIGHT HAND UP  CROUCH",
+            "BOTH HANDS  WAIT",
+            "CAMERA REQUIRED",
+        ) if allow_camera else (
+            "CAMERA DISABLED",
+            "USE --NO-CAMERA",
+            "KEYBOARD IS READY",
+            "PRESS ENTER TO CONTINUE",
+        )
+        cards = (
+            (pygame.Rect(93, 205, 282, 206), "KEYBOARD", ("W  JUMP / UP", "S  DROP / DOWN", "A  CROUCH", "D  BIG JUMP")),
+            (pygame.Rect(425, 205, 282, 206), "CAMERA POSE", camera_lines),
+        )
+        for index, (card, label, lines) in enumerate(cards):
+            active = index == selected
+            card_enabled = index == 0 or allow_camera
+            draw_pixel_wood_frame(
+                surface,
+                card,
+                fill=(54, 85, 59) if active and card_enabled else (43, 49, 43),
+            )
+            border_color = PALETTE["gold_light"] if active else PALETTE["muted_cream"]
+            pygame.draw.rect(surface, border_color, card.inflate(-10, -10), 2)
+            card_title = body_font.render(label, False, PALETTE["cream"])
+            surface.blit(card_title, card_title.get_rect(center=(card.centerx, card.top + 38)))
+            for line_index, line in enumerate(lines):
+                text_color = PALETTE["gold_light"] if active and card_enabled else PALETTE["muted_cream"]
+                text = body_font.render(line, False, text_color)
+                surface.blit(text, text.get_rect(center=(card.centerx, card.top + 78 + line_index * 27)))
+        pygame.display.flip()
+        clock.tick(30)
+
+
+def _show_level1_tutorial(surface: pygame.Surface, control_mode: ControlMode) -> bool:
     """Show Level 1 controls and wait for Enter/Space or Escape."""
     clock = pygame.time.Clock()
     title_font = pygame.font.Font(None, 42)
     body_font = pygame.font.Font(None, 27)
     lines = (
         "LEVEL 1  |  PLANT RUNNER",
-        "UP / raise only left hand: jump",
-        "DOWN / raise only right hand: slide",
+        "KEYBOARD: W UP  /  S DOWN  /  A CROUCH  /  D BIG JUMP" if control_mode == "keyboard" else "CAMERA: LEFT HAND JUMP  /  RIGHT HAND CROUCH",
         "Collect nutrients and spray; avoid hazards.",
+        "Floating platforms add a second route through the forest.",
         "Press ENTER or SPACE to start  |  ESC to quit",
     )
 
