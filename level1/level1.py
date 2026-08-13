@@ -59,6 +59,9 @@ from ui.pixel_style import (
     draw_status_hexagon,
     draw_pixel_badge,
     draw_pixel_wood_frame,
+    draw_stardew_action_ribbon,
+    draw_stardew_menu_backdrop,
+    draw_stardew_tutorial_panel,
 )
 
 
@@ -423,8 +426,11 @@ class Level1Game:
             surface,
             self.player.rect,
             self.plant.plant_type,
-            running_frame=round(self.elapsed * 8),
+            # The refined sixteen-frame cycle is sampled at 16 fps for a smoother
+            # stride while the simulation itself continues at the target FPS.
+            running_frame=round(self.elapsed * 16),
             crouching=self.player.crouching,
+            jumping=not self.player.grounded,
         )
 
     def _draw_plant(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
@@ -645,14 +651,16 @@ def _choose_level1_control(
             elif event.key == pygame.K_ESCAPE:
                 return None
 
-        draw_pixel_backdrop(surface, base=(92, 160, 184), horizon=540)
-        pygame.draw.rect(surface, (62, 110, 70), (0, 540, WINDOW_WIDTH, 60))
-        panel = pygame.Rect(64, 72, 672, 420)
-        draw_pixel_wood_frame(surface, panel, fill=(29, 31, 29))
-        title = title_font.render("CHOOSE CONTROL METHOD", False, PALETTE["gold_light"])
-        surface.blit(title, title.get_rect(center=(400, 120)))
-        hint = body_font.render("LEFT / RIGHT SELECT     ENTER CONFIRM     ESC CANCEL", False, PALETTE["muted_cream"])
-        surface.blit(hint, hint.get_rect(center=(400, 158)))
+        draw_stardew_menu_backdrop(surface)
+        panel = pygame.Rect(48, 40, 704, 500)
+        content = draw_stardew_tutorial_panel(
+            surface,
+            panel,
+            title="CHOOSE YOUR TOOL",
+            subtitle="Pick the way you will guide your plant",
+        )
+        hint = body_font.render("LEFT / RIGHT SELECT    ENTER CONFIRM    ESC CANCEL", False, (117, 82, 49))
+        surface.blit(hint, hint.get_rect(center=(400, content.top + 10)))
         camera_lines = (
             "LEFT HAND UP  JUMP",
             "RIGHT HAND UP  CROUCH",
@@ -665,25 +673,29 @@ def _choose_level1_control(
             "PRESS ENTER TO CONTINUE",
         )
         cards = (
-            (pygame.Rect(93, 205, 282, 206), "KEYBOARD", ("W  JUMP / UP", "S  DROP / DOWN", "A  CROUCH", "D  BIG JUMP")),
-            (pygame.Rect(425, 205, 282, 206), "CAMERA POSE", camera_lines),
+            (pygame.Rect(76, 190, 300, 235), "KEYBOARD", ("W  JUMP / UP", "S  DROP / DOWN", "A  CROUCH", "D  BIG JUMP")),
+            (pygame.Rect(424, 190, 300, 235), "CAMERA POSE", camera_lines),
         )
         for index, (card, label, lines) in enumerate(cards):
             active = index == selected
             card_enabled = index == 0 or allow_camera
-            draw_pixel_wood_frame(
+            pygame.draw.rect(surface, (116, 78, 45), card.move(3, 4))
+            pygame.draw.rect(surface, (222, 185, 115), card)
+            pygame.draw.rect(
                 surface,
+                (126, 164, 89) if active and card_enabled else (218, 198, 145),
                 card,
-                fill=(54, 85, 59) if active and card_enabled else (43, 49, 43),
             )
-            border_color = PALETTE["gold_light"] if active else PALETTE["muted_cream"]
-            pygame.draw.rect(surface, border_color, card.inflate(-10, -10), 2)
-            card_title = body_font.render(label, False, PALETTE["cream"])
+            pygame.draw.rect(surface, (94, 62, 39), card, 3)
+            border_color = (255, 236, 153) if active else (158, 112, 62)
+            pygame.draw.rect(surface, border_color, card.inflate(-9, -9), 3)
+            card_title = body_font.render(label, False, (78, 52, 32) if not active else (250, 238, 184))
             surface.blit(card_title, card_title.get_rect(center=(card.centerx, card.top + 38)))
             for line_index, line in enumerate(lines):
-                text_color = PALETTE["gold_light"] if active and card_enabled else PALETTE["muted_cream"]
+                text_color = (255, 241, 179) if active and card_enabled else (102, 72, 43)
                 text = body_font.render(line, False, text_color)
                 surface.blit(text, text.get_rect(center=(card.centerx, card.top + 78 + line_index * 27)))
+        draw_stardew_action_ribbon(surface, pygame.Rect(240, 462, 320, 40), "ENTER  /  START ADVENTURE")
         pygame.display.flip()
         clock.tick(30)
 
@@ -694,11 +706,9 @@ def _show_level1_tutorial(surface: pygame.Surface, control_mode: ControlMode) ->
     title_font = pygame.font.Font(None, 42)
     body_font = pygame.font.Font(None, 27)
     lines = (
-        "LEVEL 1  |  PLANT RUNNER",
         "KEYBOARD: W UP  /  S DOWN  /  A CROUCH  /  D BIG JUMP" if control_mode == "keyboard" else "CAMERA: LEFT HAND JUMP  /  RIGHT HAND CROUCH",
         "Collect nutrients and spray; avoid hazards.",
         "Floating platforms add a second route through the forest.",
-        "Press ENTER or SPACE to start  |  ESC to quit",
     )
 
     while True:
@@ -711,23 +721,20 @@ def _show_level1_tutorial(surface: pygame.Surface, control_mode: ControlMode) ->
                 if event.key == pygame.K_ESCAPE:
                     return False
 
-        draw_pixel_backdrop(surface, base=(177, 209, 199), horizon=540)
-        pygame.draw.rect(surface, (94, 145, 103), (0, 540, WINDOW_WIDTH, 60))
-        for x in range(0, WINDOW_WIDTH, 56):
-            pygame.draw.rect(surface, (137, 185, 103), (x + 8, 540, 25, 4))
-        panel = pygame.Rect(75, 92, 650, 390)
-        draw_pixel_panel(
+        draw_stardew_menu_backdrop(surface)
+        panel = pygame.Rect(48, 48, 704, 480)
+        content = draw_stardew_tutorial_panel(
             surface,
             panel,
-            fill=PALETTE["panel"],
-            border=PALETTE["gold"],
-            accent=PALETTE["green"],
+            title="FIELD NOTES  /  LEVEL 1",
+            subtitle="Gather what your plant needs",
         )
         for index, line in enumerate(lines):
-            font = title_font if index == 0 else body_font
-            color = PALETTE["gold_light"] if index == 0 else PALETTE["cream"]
+            font = body_font
+            color = (91, 61, 37)
             text = font.render(line, False, color)
-            surface.blit(text, text.get_rect(center=(400, 150 + index * 56)))
+            surface.blit(text, text.get_rect(center=(400, content.top + 20 + index * 54)))
+        draw_stardew_action_ribbon(surface, pygame.Rect(222, 470, 356, 40), "ENTER  /  BEGIN RUN")
         pygame.display.flip()
         clock.tick(30)
 

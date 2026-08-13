@@ -119,6 +119,7 @@ def _show_analysis_preview(plant: PlantData) -> bool:
         draw_pixel_plant,
         draw_power_readout,
         draw_status_hexagon,
+        draw_stardew_menu_backdrop,
     )
 
     pygame.init()
@@ -143,10 +144,7 @@ def _show_analysis_preview(plant: PlantData) -> bool:
                     if event.key == pygame.K_ESCAPE:
                         return False
 
-            draw_pixel_backdrop(screen, base=(188, 216, 205), horizon=665)
-            pygame.draw.rect(screen, (153, 190, 153), (0, 665, 1120, 55))
-            for x in range(0, 1120, 48):
-                pygame.draw.rect(screen, (111, 157, 112), (x + 8, 665, 22, 4))
+            draw_stardew_menu_backdrop(screen)
 
             header = pygame.Rect(24, 20, 1072, 108)
             draw_pixel_panel(
@@ -236,7 +234,15 @@ def _difficulty_picker() -> DifficultyConfig | None:
     """Let the player choose easy/normal/hard before Level 2."""
     import pygame
 
-    from ui.pixel_style import PALETTE, draw_pixel_backdrop, draw_pixel_badge, draw_pixel_panel
+    from ui.pixel_style import (
+        PALETTE,
+        draw_pixel_backdrop,
+        draw_pixel_badge,
+        draw_pixel_panel,
+        draw_stardew_action_ribbon,
+        draw_stardew_menu_backdrop,
+        draw_stardew_tutorial_panel,
+    )
 
     pygame.init()
     screen = pygame.display.set_mode((820, 520))
@@ -266,45 +272,56 @@ def _difficulty_picker() -> DifficultyConfig | None:
                 elif event.key == pygame.K_ESCAPE:
                     return None
 
-            draw_pixel_backdrop(screen, base=(177, 210, 198), horizon=460)
-            pygame.draw.rect(screen, (103, 157, 111), (0, 460, 820, 60))
-            header = pygame.Rect(24, 20, 772, 125)
-            draw_pixel_panel(screen, header, fill=PALETTE["deep_ink"], accent=PALETTE["gold"])
-            title = title_font.render("CHOOSE DIFFICULTY", False, PALETTE["gold_light"])
-            screen.blit(title, title.get_rect(center=(410, 68)))
-            hint = body_font.render(
-                "Use 1/2/3 or arrow keys, then press Enter", False, PALETTE["cream"]
+            draw_stardew_menu_backdrop(screen)
+            header = pygame.Rect(24, 20, 772, 145)
+            header_content = draw_stardew_tutorial_panel(
+                screen,
+                header,
+                title="CHOOSE YOUR HARVEST",
+                subtitle="Select the challenge for the farmhouse defense",
+                accent=(111, 165, 78),
             )
-            screen.blit(hint, hint.get_rect(center=(410, 112)))
+            hint = body_font.render(
+                "1 / 2 / 3  or  ARROW KEYS     ENTER  /  CONFIRM", False, (117, 82, 49)
+            )
+            screen.blit(hint, hint.get_rect(center=(410, header_content.top + 7)))
 
             for index, name in enumerate(names):
                 rect = pygame.Rect(55 + index * 255, 180, 210, 170)
                 active = index == selected
-                draw_pixel_panel(
+                pygame.draw.rect(screen, (71, 47, 29), rect.move(4, 5))
+                pygame.draw.rect(screen, (154, 95, 45), rect)
+                pygame.draw.rect(
                     screen,
+                    (126, 164, 89) if active else (218, 198, 145),
+                    rect.inflate(-8, -8),
+                )
+                pygame.draw.rect(
+                    screen,
+                    (255, 231, 142) if active else (183, 132, 72),
                     rect,
-                    fill=(74, 132, 84) if active else PALETTE["panel"],
-                    border=PALETTE["gold_light"] if active else PALETTE["panel_light"],
-                    accent=PALETTE["green_light"] if active else PALETTE["wood"],
+                    3,
                 )
                 draw_pixel_badge(screen, pygame.Rect(rect.left + 12, rect.top + 12, 30, 24), str(index + 1), fill=PALETTE["wood"])
-                label = title_font.render(name.upper(), False, PALETTE["cream"])
+                label = title_font.render(name.upper(), False, (255, 238, 172) if active else (91, 61, 37))
                 screen.blit(label, label.get_rect(center=(rect.centerx, rect.top + 51)))
                 config = DIFFICULTIES[name]
                 detail = small_font.render(
                     f"HP x{config.zombie_hp_multiplier:.1f}  "
                     f"speed x{config.zombie_speed_multiplier:.1f}",
                     False,
-                    PALETTE["muted_cream"],
+                    (255, 238, 172) if active else (117, 82, 49),
                 )
                 screen.blit(detail, detail.get_rect(center=(rect.centerx, rect.top + 112)))
                 detail2 = small_font.render(
                     f"count x{config.zombie_count_multiplier:.1f}  "
                     f"score x{config.score_multiplier:.1f}",
                     False,
-                    PALETTE["muted_cream"],
+                    (255, 238, 172) if active else (117, 82, 49),
                 )
                 screen.blit(detail2, detail2.get_rect(center=(rect.centerx, rect.top + 141)))
+
+            draw_stardew_action_ribbon(screen, pygame.Rect(250, 385, 320, 40), "ENTER  /  CHOOSE FARM PATH")
 
             pygame.display.flip()
             clock.tick(30)
@@ -316,7 +333,14 @@ def _show_final_result(result: FinalResult) -> None:
     """Display the final score until the player closes the result screen."""
     import pygame
 
-    from ui.pixel_style import PALETTE, draw_pixel_backdrop, draw_pixel_badge, draw_pixel_panel
+    from ui.pixel_style import (
+        PALETTE,
+        draw_pixel_backdrop,
+        draw_pixel_badge,
+        draw_stardew_action_ribbon,
+        draw_stardew_menu_backdrop,
+        draw_stardew_tutorial_panel,
+    )
 
     pygame.init()
     screen = pygame.display.set_mode((800, 560))
@@ -335,14 +359,26 @@ def _show_final_result(result: FinalResult) -> None:
                 pygame.quit()
                 return
 
-        draw_pixel_backdrop(screen, base=(178, 208, 197), horizon=490)
-        pygame.draw.rect(screen, (102, 151, 108), (0, 490, 800, 70))
-        color = (255, 222, 96) if result.victory else (235, 104, 85)
-        card = pygame.Rect(75, 28, 650, 450)
-        draw_pixel_panel(screen, card, fill=PALETTE["deep_ink"], border=color, accent=color)
-        draw_pixel_badge(screen, pygame.Rect(100, 52, 112, 28), "RUN COMPLETE", fill=PALETTE["green"])
-        title = title_font.render("VICTORY" if result.victory else "DEFEAT", False, color)
-        screen.blit(title, title.get_rect(center=(400, 72)))
+        draw_stardew_menu_backdrop(screen)
+        color = (91, 137, 68) if result.victory else (172, 83, 56)
+        panel = pygame.Rect(40, 24, 720, 478)
+        content = draw_stardew_tutorial_panel(
+            screen,
+            panel,
+            title=f"HARVEST REPORT  /  {'VICTORY' if result.victory else 'DEFEAT'}",
+            subtitle=(
+                "The farmhouse is safe and the plant can keep growing"
+                if result.victory
+                else "The garden needs another season to recover"
+            ),
+            accent=(111, 165, 78) if result.victory else (196, 104, 70),
+        )
+        draw_pixel_badge(
+            screen,
+            pygame.Rect(84, 144, 132, 28),
+            "HARVESTED" if result.victory else "TRY AGAIN",
+            fill=color,
+        )
         rows = (
             f"Plant ID: {result.plant_id}   Type: {result.plant_type}",
             f"Initial power: {result.initial_power:.2f}",
@@ -352,13 +388,12 @@ def _show_final_result(result: FinalResult) -> None:
             f"Difficulty: {result.difficulty.upper()} (x{result.difficulty_multiplier:.1f})",
         )
         for index, row in enumerate(rows):
-            text = body_font.render(row, False, PALETTE["cream"])
-            screen.blit(text, text.get_rect(center=(400, 145 + index * 42)))
-        pygame.draw.rect(screen, PALETTE["panel_light"], (145, 382, 510, 3))
+            text = body_font.render(row, False, (91, 61, 37))
+            screen.blit(text, text.get_rect(center=(400, 198 + index * 35)))
+        pygame.draw.rect(screen, (180, 126, 58), (145, 392, 510, 3))
         final_text = title_font.render(f"FINAL SCORE  {result.final_score:.2f}", False, color)
-        screen.blit(final_text, final_text.get_rect(center=(400, 410)))
-        hint = small_font.render("Press Enter, Space or Escape to close", False, PALETTE["muted_cream"])
-        screen.blit(hint, hint.get_rect(center=(400, 530)))
+        screen.blit(final_text, final_text.get_rect(center=(400, 418)))
+        draw_stardew_action_ribbon(screen, pygame.Rect(220, 448, 360, 38), "ENTER  /  CLOSE REPORT")
         pygame.display.flip()
         clock.tick(30)
 

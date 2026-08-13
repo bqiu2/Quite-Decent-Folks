@@ -1,14 +1,15 @@
-"""Small, asset-free pixel-art primitives shared by the game screens.
+"""Pixel-art primitives and shared plant sprite rendering for the game.
 
 The game deliberately draws at the final window resolution with hard-edged
-rectangles and a limited palette.  Keeping these primitives in one place
-prevents the analysis screen and the playable levels from looking like three
-different games.
+rectangles and a limited palette.  Keeping these primitives in one place,
+including the reference-inspired plant assets, prevents the analysis screen
+and the playable levels from looking like three different games.
 """
 
 from __future__ import annotations
 
 from math import cos, pi, sin
+from pathlib import Path
 
 import pygame
 
@@ -34,6 +35,12 @@ PALETTE = {
     "sky": (172, 209, 207),
     "sky_light": (226, 236, 205),
 }
+
+_STARDew_MENU_BACKGROUND: pygame.Surface | None = None
+_STARDew_MENU_SCALED: dict[tuple[int, int], pygame.Surface] = {}
+_PLANT_ASSET_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
+_RUNNER_ASSET_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
+_RUNNER_SHEET_CACHE: dict[str, tuple[tuple[pygame.Surface, ...], tuple[int, int]]] = {}
 
 STATUS_KEYS = ("water", "light", "nitrogen", "phosphorus", "potassium", "pest")
 STATUS_LABELS = ("WATER", "LIGHT", "N", "P", "K", "PEST")
@@ -124,6 +131,80 @@ def draw_pixel_wood_frame(
         pygame.draw.rect(surface, (247, 207, 111), (x, y, 3, 3))
 
 
+def draw_stardew_tutorial_panel(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    title: str,
+    subtitle: str | None = None,
+    accent: tuple[int, int, int] = PALETTE["green_light"],
+) -> pygame.Rect:
+    """Draw a warm farm noticeboard and return its parchment content rect."""
+    rect = pygame.Rect(rect)
+    shadow = rect.move(8, 9)
+    pygame.draw.rect(surface, (38, 28, 23), shadow)
+    pygame.draw.rect(surface, (77, 47, 29), rect)
+    pygame.draw.rect(surface, (151, 91, 43), rect.inflate(-5, -5))
+    pygame.draw.rect(surface, (224, 155, 70), rect.inflate(-9, -9))
+    inner = rect.inflate(-22, -22)
+    pygame.draw.rect(surface, (241, 218, 163), inner)
+    pygame.draw.rect(surface, (193, 154, 93), inner, 3)
+    # Pixel notches make the frame feel assembled from timber rather than a
+    # smooth rectangular overlay.
+    for x, y in (
+        (rect.left + 5, rect.top + 5),
+        (rect.right - 11, rect.top + 5),
+        (rect.left + 5, rect.bottom - 11),
+        (rect.right - 11, rect.bottom - 11),
+    ):
+        pygame.draw.rect(surface, (52, 34, 26), (x, y, 6, 6))
+    # Brass pins and a tiny leaf motif establish the farm-board language.
+    for x, y in (
+        (inner.left + 10, inner.top + 10),
+        (inner.right - 16, inner.top + 10),
+    ):
+        pygame.draw.rect(surface, (104, 61, 32), (x + 2, y + 2, 7, 7))
+        pygame.draw.rect(surface, (248, 196, 83), (x, y, 7, 7))
+        pygame.draw.rect(surface, (255, 226, 123), (x + 1, y + 1, 3, 3))
+    leaf_x = inner.right - 38
+    leaf_y = inner.bottom - 23
+    pygame.draw.rect(surface, (75, 127, 60), (leaf_x, leaf_y, 5, 14))
+    pygame.draw.rect(surface, accent, (leaf_x - 8, leaf_y - 2, 10, 6))
+    pygame.draw.rect(surface, (104, 159, 69), (leaf_x + 5, leaf_y + 5, 10, 6))
+    title_font = pygame.font.Font(None, max(28, min(42, rect.width // 16)))
+    title_surface = title_font.render(title, False, (91, 57, 32))
+    surface.blit(title_surface, title_surface.get_rect(center=(rect.centerx, inner.top + 34)))
+    pygame.draw.rect(surface, (180, 126, 58), (inner.left + 24, inner.top + 57, inner.width - 48, 3))
+    if subtitle:
+        subtitle_font = pygame.font.Font(None, max(18, min(24, rect.width // 32)))
+        subtitle_surface = subtitle_font.render(subtitle, False, (117, 82, 49))
+        surface.blit(subtitle_surface, subtitle_surface.get_rect(center=(rect.centerx, inner.top + 78)))
+    return pygame.Rect(
+        inner.left + 24,
+        inner.top + 94,
+        inner.width - 48,
+        max(12, inner.height - 112),
+    )
+
+
+def draw_stardew_action_ribbon(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    text: str,
+    *,
+    fill: tuple[int, int, int] = (91, 137, 68),
+) -> None:
+    """Draw a centered green farm-sign ribbon for the primary action."""
+    rect = pygame.Rect(rect)
+    pygame.draw.rect(surface, (53, 37, 27), rect.move(3, 4))
+    pygame.draw.rect(surface, (99, 62, 35), rect)
+    pygame.draw.rect(surface, fill, rect.inflate(-6, -6))
+    pygame.draw.rect(surface, (181, 214, 105), (rect.left + 8, rect.top + 6, rect.width - 16, 3))
+    font = pygame.font.Font(None, max(18, min(26, rect.height - 8)))
+    label = font.render(text, False, PALETTE["cream"])
+    surface.blit(label, label.get_rect(center=rect.center))
+
+
 def draw_pixel_backdrop(
     surface: pygame.Surface,
     *,
@@ -140,6 +221,52 @@ def draw_pixel_backdrop(
     for x in range(-32, width + 32, 64):
         pygame.draw.rect(surface, (198, 222, 194), (x, max(0, horizon - 42), 32, 4))
         pygame.draw.rect(surface, (151, 190, 158), (x + 36, max(0, horizon - 30), 12, 3))
+
+
+def draw_stardew_menu_backdrop(surface: pygame.Surface) -> None:
+    """Fill a menu surface with the shared pixel-art manor courtyard."""
+    global _STARDew_MENU_BACKGROUND
+
+    if _STARDew_MENU_BACKGROUND is None:
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "assets"
+            / "ui"
+            / "stardew_manor_menu_background.png"
+        )
+        try:
+            image = pygame.image.load(str(path))
+            _STARDew_MENU_BACKGROUND = image.convert() if pygame.display.get_surface() else image.copy()
+        except (FileNotFoundError, pygame.error):
+            _STARDew_MENU_BACKGROUND = pygame.Surface((1, 1))
+            _STARDew_MENU_BACKGROUND.fill((93, 139, 91))
+
+    size = surface.get_size()
+    background = _STARDew_MENU_SCALED.get(size)
+    if background is None:
+        source = _STARDew_MENU_BACKGROUND
+        source_width, source_height = source.get_size()
+        target_ratio = size[0] / max(1, size[1])
+        source_ratio = source_width / max(1, source_height)
+        if source_ratio > target_ratio:
+            crop_width = max(1, round(source_height * target_ratio))
+            source = source.subsurface(
+                pygame.Rect((source_width - crop_width) // 2, 0, crop_width, source_height)
+            ).copy()
+        elif source_ratio < target_ratio:
+            crop_height = max(1, round(source_width / target_ratio))
+            source = source.subsurface(
+                pygame.Rect(0, (source_height - crop_height) // 2, source_width, crop_height)
+            ).copy()
+        background = pygame.transform.scale(source, size)
+        _STARDew_MENU_SCALED[size] = background
+
+    surface.blit(background, (0, 0))
+    # A subtle green veil keeps the parchment cards legible while preserving
+    # the manor, path, flowers, and timber textures behind them.
+    veil = pygame.Surface(size, pygame.SRCALPHA)
+    veil.fill((28, 52, 31, 38))
+    surface.blit(veil, (0, 0))
 
 
 def draw_pixel_badge(
@@ -275,6 +402,154 @@ def draw_power_readout(
         surface.blit(delta_text, (position[0], position[1] + current.get_height() - 2))
 
 
+def _load_plant_asset(plant_type: str, size: int) -> pygame.Surface | None:
+    """Load one of the reference-inspired pixel plant sprites at native scale.
+
+    The source PNGs are intentionally transparent cut-outs.  Cropping their
+    transparent padding here lets the same detailed sprite fit both the large
+    analysis card and the small in-game plant carrier without introducing a
+    second, simplified icon style.
+    """
+    key = (plant_type.lower(), int(size))
+    if key in _PLANT_ASSET_CACHE:
+        cached = _PLANT_ASSET_CACHE[key]
+        return cached.copy() if cached is not None else None
+
+    asset_path = Path(__file__).resolve().parents[1] / "assets" / "plants" / f"{key[0]}.png"
+    try:
+        image = pygame.image.load(str(asset_path))
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
+        else:
+            image = image.copy()
+    except (pygame.error, OSError):
+        _PLANT_ASSET_CACHE[key] = None
+        return None
+
+    # ``Surface.get_bounding_rect`` inspects the per-pixel alpha channel;
+    # ``get_alpha`` only returns the surface-wide alpha integer.
+    bounds = image.get_bounding_rect(min_alpha=1)
+    if bounds.width and bounds.height:
+        image = image.subsurface(bounds).copy()
+
+    ratio = min(size / image.get_width(), size / image.get_height())
+    target = (
+        max(1, round(image.get_width() * ratio)),
+        max(1, round(image.get_height() * ratio)),
+    )
+    # pygame.scale is nearest-neighbour here, preserving the square pixel
+    # blocks from the supplied references instead of blurring their edges.
+    scaled = pygame.transform.scale(image, target)
+    _PLANT_ASSET_CACHE[key] = scaled
+    return scaled.copy()
+
+
+def _load_runner_asset(
+    plant_type: str,
+    frame: int,
+    target_size: tuple[int, int],
+    *,
+    run_cycle: bool = False,
+) -> pygame.Surface | None:
+    """Load one full-body farmer pose carrying the selected potted plant."""
+    plant_key = plant_type.lower()
+    frame_key = max(0, min(15 if run_cycle else 3, int(frame)))
+    key = (f"{plant_key}_run" if run_cycle else plant_key, frame_key)
+    if key in _RUNNER_ASSET_CACHE:
+        cached = _RUNNER_ASSET_CACHE[key]
+        return cached.copy() if cached is not None else None
+
+    if run_cycle and plant_key in _RUNNER_SHEET_CACHE:
+        image = _RUNNER_SHEET_CACHE[plant_key][0][frame_key].copy()
+    else:
+        if run_cycle:
+            asset_path = Path(__file__).resolve().parents[1] / "assets" / "runner" / f"{plant_key}_run_sheet.png"
+        else:
+            asset_path = Path(__file__).resolve().parents[1] / "assets" / "runner" / f"{plant_key}_{frame_key}.png"
+        try:
+            image = pygame.image.load(str(asset_path))
+            if pygame.display.get_surface() is not None:
+                image = image.convert_alpha()
+            else:
+                image = image.copy()
+        except (pygame.error, OSError):
+            _RUNNER_ASSET_CACHE[key] = None
+            return None
+
+    if run_cycle and plant_key not in _RUNNER_SHEET_CACHE:
+        # The refined sheet is a 4x4 grid.  Extract every pose once, then
+        # place all poses on one shared canvas.  This prevents per-frame
+        # alpha bounds from changing the runner's apparent height or stride.
+        columns = 4
+        rows = 4
+        extracted: list[pygame.Surface] = []
+        for sheet_frame in range(16):
+            column = sheet_frame % columns
+            row = sheet_frame // columns
+            cell_left = round(image.get_width() * column / columns)
+            cell_right = round(image.get_width() * (column + 1) / columns)
+            cell_top = round(image.get_height() * row / rows)
+            cell_bottom = round(image.get_height() * (row + 1) / rows)
+            cell_width = cell_right - cell_left
+            cell_height = cell_bottom - cell_top
+            safe_margin = max(2, round(min(cell_width, cell_height) * 0.012))
+            frame_image = image.subsurface(
+                pygame.Rect(
+                    cell_left + safe_margin,
+                    cell_top + safe_margin,
+                    cell_width - safe_margin * 2,
+                    cell_height - safe_margin * 2,
+                )
+            ).copy()
+
+            # Remove any isolated edge pixels that were accidentally painted
+            # into a neighbouring cell by the image generator.
+            mask = pygame.mask.from_surface(frame_image, 1)
+            components = mask.connected_components()
+            if components:
+                main_component = max(components, key=lambda component: component.count())
+                cleaned = pygame.Surface(frame_image.get_size(), pygame.SRCALPHA)
+                for pixel_y in range(frame_image.get_height()):
+                    for pixel_x in range(frame_image.get_width()):
+                        if main_component.get_at((pixel_x, pixel_y)):
+                            cleaned.set_at((pixel_x, pixel_y), frame_image.get_at((pixel_x, pixel_y)))
+                frame_image = cleaned
+
+            bounds = frame_image.get_bounding_rect(min_alpha=1)
+            if bounds.width and bounds.height:
+                frame_image = frame_image.subsurface(bounds).copy()
+            extracted.append(frame_image)
+
+        canvas_width = max(frame.get_width() for frame in extracted)
+        canvas_height = max(frame.get_height() for frame in extracted)
+        normalized: list[pygame.Surface] = []
+        for frame_image in extracted:
+            frame_canvas = pygame.Surface((canvas_width, canvas_height), pygame.SRCALPHA)
+            frame_canvas.blit(
+                frame_image,
+                (
+                    (canvas_width - frame_image.get_width()) // 2,
+                    canvas_height - frame_image.get_height(),
+                ),
+            )
+            normalized.append(frame_canvas)
+        _RUNNER_SHEET_CACHE[plant_key] = (tuple(normalized), (canvas_width, canvas_height))
+        image = normalized[frame_key].copy()
+
+    if not run_cycle:
+        bounds = image.get_bounding_rect(min_alpha=1)
+        if bounds.width and bounds.height:
+            image = image.subsurface(bounds).copy()
+    ratio = min(target_size[0] / image.get_width(), target_size[1] / image.get_height())
+    scaled_size = (
+        max(1, round(image.get_width() * ratio)),
+        max(1, round(image.get_height() * ratio)),
+    )
+    scaled = pygame.transform.scale(image, scaled_size)
+    _RUNNER_ASSET_CACHE[key] = scaled
+    return scaled.copy()
+
+
 def draw_pixel_plant(
     surface: pygame.Surface,
     center: tuple[int, int],
@@ -282,9 +557,22 @@ def draw_pixel_plant(
     *,
     scale: int = 1,
 ) -> None:
-    """Draw the three plant classes as chunky pixel sprites."""
+    """Draw the detailed reference-inspired sprite for a plant class.
+
+    All three classes use separately illustrated terracotta-pot assets.  The
+    old procedural renderer below remains as a defensive fallback for a
+    missing asset, but normal game runs use the PNGs in ``assets/plants``.
+    """
     scale = max(1, int(scale))
     cx, cy = center
+
+    # ``scale=1`` is used by the two gameplay sprites; the analysis preview
+    # requests ``scale=4`` and gets a larger, still crisp version of the same
+    # artwork.
+    asset = _load_plant_asset(plant_type, 56 if scale == 1 else 320)
+    if asset is not None:
+        surface.blit(asset, asset.get_rect(center=(cx, cy)))
+        return
 
     def block(x: int, y: int, width: int, height: int, color) -> None:
         pygame.draw.rect(
@@ -293,54 +581,177 @@ def draw_pixel_plant(
             (cx + x * scale, cy + y * scale, width * scale, height * scale),
         )
 
-    # Shadow, pot rim, pot body, soil, and tiny ceramic highlights.
-    block(-20, 25, 40, 5, (31, 42, 35))
-    block(-15, 5, 30, 21, PALETTE["wood"])
-    block(-17, 3, 34, 6, PALETTE["wood_light"])
-    block(-13, 8, 26, 4, PALETTE["soil"])
-    block(-10, 12, 3, 10, (158, 87, 54))
-    block(7, 13, 3, 9, (82, 49, 42))
-    block(-11, 23, 22, 3, (76, 45, 39))
+    def poly(points: tuple[tuple[int, int], ...], color) -> None:
+        pygame.draw.polygon(
+            surface,
+            color,
+            tuple((cx + x * scale, cy + y * scale) for x, y in points),
+        )
+
+    plant_type = plant_type.lower()
+    outline = (43, 35, 31)
+    ground_shadow = (37, 51, 38)
+    soil_dark = (86, 52, 37)
+    soil_mid = (132, 77, 45)
+    soil_light = (198, 120, 61)
+
+    # Shared ground tile: an irregular patch of freshly watered earth instead
+    # of the old pot silhouette.  Tiny stones and sprouts give it a hand-laid
+    # Stardew farm-tile feel at both 1x and 4x.
+    block(-24, 25, 48, 4, ground_shadow)
+    poly(((-23, 18), (-16, 13), (15, 13), (23, 18), (19, 25), (-19, 25)), outline)
+    poly(((-19, 18), (-14, 15), (14, 15), (19, 18), (16, 23), (-16, 23)), soil_dark)
+    block(-13, 16, 25, 4, soil_mid)
+    block(-9, 16, 9, 2, soil_light)
+    block(11, 19, 5, 2, (69, 43, 34))
+    block(-15, 21, 4, 3, (174, 102, 54))
+    block(3, 22, 5, 2, (110, 62, 41))
+    block(15, 15, 3, 3, (221, 169, 84))
 
     if plant_type == "grass":
-        for x, top, width in ((-14, -18, 4), (-8, -28, 5), (-1, -36, 5), (7, -26, 5), (14, -18, 4)):
-            block(x, top, width, 27 - top, (39, 106, 59))
-            block(x + 1, top + 2, 2, 18 - top, (132, 199, 83))
-            block(x + width - 1, top + 5, 2, 13, (27, 77, 51))
-        block(-4, -37, 3, 4, (183, 218, 103))
+        # A dense tuft of individual blades, with seed heads and wind-tilted
+        # highlights.  Every blade has a dark offset silhouette.
+        blade_specs = (
+            (-18, -8, -22, -2, (37, 91, 53), (103, 164, 70)),
+            (-13, 7, -27, -7, (47, 117, 59), (138, 193, 77)),
+            (-8, 4, -34, -1, (32, 86, 50), (111, 177, 71)),
+            (-2, 4, -38, 4, (41, 103, 55), (151, 202, 82)),
+            (4, 6, -31, 14, (50, 123, 61), (140, 195, 76)),
+            (10, 9, -26, 20, (35, 94, 52), (110, 171, 68)),
+            (16, 8, -20, 22, (49, 112, 58), (129, 185, 71)),
+        )
+        for left, base, tip_y, tip_x, dark, light in blade_specs:
+            right = left + 5
+            poly(((left - 2, base + 2), (right + 2, base + 2), (tip_x, tip_y)), outline)
+            poly(((left, base), (right, base), (tip_x, tip_y + 3)), dark)
+            block(round((left + tip_x) / 2), tip_y + 5, 2, max(2, base - tip_y - 5), light)
+        # Wheat-coloured seed heads and one curled grass tip.
+        for x, y in ((-4, -40), (-10, -29), (13, -26)):
+            block(x, y, 3, 5, (196, 166, 79))
+            block(x + 2, y - 2, 3, 3, (239, 212, 116))
+        block(-6, -42, 3, 2, (245, 220, 126))
+        block(-20, -10, 3, 3, (173, 205, 78))
+        block(15, -17, 3, 3, (183, 211, 84))
         return
 
     if plant_type == "shrub":
+        # Branches remain visible beneath an asymmetrical canopy, avoiding the
+        # old single geometric blob.  Leaf clusters use three greens and tiny
+        # berries to create depth.
+        block(-5, -2, 10, 19, outline)
+        block(-2, -3, 5, 19, (105, 64, 39))
+        poly(((-2, 5), (-17, -7), (-15, -10), (1, 1)), outline)
+        poly(((3, 4), (16, -8), (19, -7), (5, 9)), outline)
+        block(-1, 1, 3, 10, (171, 96, 48))
+
+        clusters = (
+            (-21, -12, 14, 15, (36, 91, 51)),
+            (-14, -25, 17, 17, (42, 111, 57)),
+            (-3, -31, 18, 18, (47, 121, 60)),
+            (9, -24, 16, 17, (43, 107, 55)),
+            (14, -11, 11, 14, (36, 94, 51)),
+            (-14, -5, 29, 13, (39, 102, 53)),
+        )
+        for x, y, width, height, color in clusters:
+            # Stepped octagons create soft, hand-pixeled leaf masses.
+            outer = (
+                (x + 3, y - 2),
+                (x + width - 3, y - 2),
+                (x + width + 2, y + 3),
+                (x + width + 2, y + height - 3),
+                (x + width - 3, y + height + 2),
+                (x + 3, y + height + 2),
+                (x - 2, y + height - 3),
+                (x - 2, y + 3),
+            )
+            inner = (
+                (x + 3, y),
+                (x + width - 3, y),
+                (x + width, y + 3),
+                (x + width, y + height - 3),
+                (x + width - 3, y + height),
+                (x + 3, y + height),
+                (x, y + height - 3),
+                (x, y + 3),
+            )
+            poly(outer, outline)
+            poly(inner, color)
+        # Leaf planes, dappled highlights, and warm berries.
         for x, y, width, height in (
-            (-16, -15, 15, 15),
-            (-4, -24, 18, 17),
-            (9, -14, 15, 14),
-            (-11, -5, 26, 11),
+            (-17, -16, 8, 5),
+            (-7, -27, 9, 5),
+            (7, -20, 8, 5),
+            (-10, -7, 10, 5),
+            (8, -5, 7, 4),
         ):
-            block(x, y, width, height, (43, 119, 62))
-            block(x + 2, y + 2, max(3, width // 3), 3, (96, 173, 74))
-        for x, y in ((-11, -12), (2, -20), (14, -10), (-3, -4)):
-            block(x, y, 5, 4, (137, 198, 82))
-        block(7, -18, 4, 4, (28, 86, 53))
+            block(x, y, width, height, (91, 158, 67))
+            block(x + 2, y, 3, 2, (159, 202, 87))
+        for x, y, color in (
+            (-13, -9, (213, 83, 63)),
+            (3, -19, (226, 111, 58)),
+            (13, -10, (194, 71, 58)),
+            (-1, -2, (219, 95, 60)),
+        ):
+            block(x, y, 5, 5, outline)
+            block(x + 1, y + 1, 3, 3, color)
+            block(x + 1, y + 1, 1, 1, (255, 174, 101))
+        block(17, -25, 5, 3, (111, 172, 67))
+        block(-21, -3, 4, 3, (120, 184, 72))
         return
 
-    # Flower: stem, leaves, four block petals and a gold centre.
-    block(-2, -24, 4, 28, (38, 111, 57))
-    block(-14, -7, 14, 6, (51, 143, 67))
-    block(2, -3, 14, 6, (51, 143, 67))
-    block(-11, -5, 5, 3, (133, 202, 85))
-    petal = (215, 83, 126)
-    petal_light = (243, 124, 153)
-    petal_dark = (151, 58, 91)
-    block(-7, -42, 14, 12, petal)
-    block(-18, -32, 13, 13, petal)
-    block(5, -32, 13, 13, petal)
-    block(-7, -20, 14, 10, petal)
-    block(-4, -40, 7, 5, petal_light)
-    block(-16, -30, 5, 5, petal_light)
-    block(8, -30, 5, 5, petal_dark)
-    block(-4, -32, 8, 10, (246, 186, 57))
-    block(-2, -30, 4, 4, (255, 228, 111))
+    # Flower: one large central blossom, a small side bud, layered leaves, and
+    # a visible stem.  The flower has a dark under-petal silhouette so it stays
+    # legible when carried by the runner or placed on the Level 2 rail.
+    block(-4, -21, 8, 35, outline)
+    block(-1, -22, 4, 34, (43, 111, 56))
+    poly(((-2, -6), (-20, -1), (-18, 5), (-2, 1)), outline)
+    poly(((3, -4), (19, 2), (17, 8), (3, 1)), outline)
+    poly(((-2, -4), (-16, 0), (-15, 3), (-2, 0)), (56, 143, 65))
+    poly(((3, -2), (16, 3), (15, 5), (3, 0)), (54, 136, 62))
+    block(-13, 0, 6, 3, (143, 202, 79))
+    block(10, 3, 5, 3, (121, 187, 72))
+    block(-8, 7, 12, 4, (30, 87, 48))
+
+    def bloom(x: int, y: int, petal: tuple[int, int, int], highlight: tuple[int, int, int], radius: int = 1) -> None:
+        dark = (105, 49, 70)
+        # A stepped eight-petal silhouette, built from pixel clusters rather
+        # than a single geometric polygon.
+        poly(
+            (
+                (x - 5 - radius, y - 13),
+                (x + 5 + radius, y - 13),
+                (x + 5 + radius, y - 8),
+                (x + 12, y - 8),
+                (x + 12, y + 3),
+                (x + 6, y + 3),
+                (x + 6, y + 10),
+                (x - 6, y + 10),
+                (x - 6, y + 4),
+                (x - 12, y + 4),
+                (x - 12, y - 7),
+                (x - 6, y - 7),
+                (x - 6, y - 13),
+            ),
+            outline,
+        )
+        block(x - 5, y - 11, 10, 18, dark)
+        block(x - 4, y - 9, 8, 14, petal)
+        block(x - 10, y - 5, 8, 8, petal)
+        block(x + 3, y - 5, 8, 8, petal)
+        block(x - 3, y - 12, 6, 5, petal)
+        block(x - 3, y + 3, 6, 5, (178, 63, 101))
+        block(x - 3, y - 8, 4, 4, highlight)
+        block(x + 4, y - 2, 3, 4, dark)
+        block(x - 2, y - 2, 5, 5, outline)
+        block(x - 1, y - 1, 3, 3, (240, 173, 54))
+        block(x, y, 2, 2, (255, 224, 100))
+
+    bloom(0, -29, (213, 82, 124), (248, 143, 163), radius=2)
+    # A little unopened bud gives the plant a natural growth-stage detail.
+    block(-22, -16, 6, 9, outline)
+    block(-21, -15, 4, 7, (186, 69, 108))
+    block(-20, -14, 2, 3, (244, 132, 155))
+    block(-22, -7, 6, 3, (232, 174, 72))
 
 
 def draw_pixel_runner(
@@ -350,9 +761,41 @@ def draw_pixel_runner(
     *,
     running_frame: int = 0,
     crouching: bool = False,
+    jumping: bool = False,
 ) -> None:
-    """Draw a detailed farmer runner carrying the generated plant sprite."""
+    """Draw the new detailed farmer animation carrying the matching pot.
+
+    The sixteen source poses form a full running cycle.  Jump and crouch use
+    dedicated poses, and the explicit state flags take priority while the
+    player is airborne or crouching.
+    """
     x, y = rect.left, rect.top
+
+    if crouching:
+        pose = 3
+        run_cycle = False
+    elif jumping:
+        pose = 2
+        run_cycle = False
+    else:
+        pose = int(running_frame) % 16
+        run_cycle = True
+    asset = _load_runner_asset(
+        plant_type,
+        pose,
+        (rect.width + 86, max(80, rect.height + 18)),
+        run_cycle=run_cycle,
+    )
+    if asset is not None:
+        # Keep the feet on the collision rectangle's bottom edge.  This makes
+        # the generated poses animate in place without changing gameplay hit
+        # boxes or making the pot float during a jump.
+        destination = asset.get_rect(midbottom=(rect.centerx + 16, rect.bottom + 1))
+        surface.blit(asset, destination)
+        return
+
+    # Defensive fallback for installations where optional generated assets
+    # have not been copied yet.
     ink = (48, 37, 31)
     skin = (238, 177, 119)
     skin_light = (255, 211, 147)

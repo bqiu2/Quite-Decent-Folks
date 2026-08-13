@@ -45,13 +45,23 @@ from .config import (
 from .plant_player import PlantPlayer
 from .projectile import Projectile
 from .wave_manager import WaveManager
-from .zombie import Zombie
+from .zombie import Pest
 from vision.hand_control import HandController
-from ui.pixel_style import PALETTE, draw_pixel_badge, draw_pixel_panel
+from ui.pixel_style import (
+    PALETTE,
+    draw_pixel_badge,
+    draw_pixel_panel,
+    draw_stardew_action_ribbon,
+    draw_stardew_tutorial_panel,
+)
 
 
 class Level2Game:
     """Playable Level 2 connected to the team's shared data contract."""
+
+    _BGM_CANDIDATES = (
+        Path(__file__).resolve().parents[1] / "assets" / "level2" / "level2_bgm.mp3",
+    )
 
     def __init__(
         self,
@@ -68,7 +78,9 @@ class Level2Game:
         self.difficulty = difficulty or DIFFICULTIES["normal"]
         self.attack_config = ATTACK_CONFIG[self.plant_data.plant_type]
         self.player = PlantPlayer(plant_type=self.plant_data.plant_type)
-        self.zombies = pygame.sprite.Group()
+        self.pests = pygame.sprite.Group()
+        # Compatibility alias for existing integrations and tests.
+        self.zombies = self.pests
         self.projectiles = pygame.sprite.Group()
         self.wave_manager = WaveManager(
             count_multiplier=self.difficulty.zombie_count_multiplier
@@ -78,15 +90,19 @@ class Level2Game:
         self.attack_timer = 0.0
         self.zombies_defeated = 0
         self.zombies_escaped = 0
+        self.pests_defeated = 0
+        self.pests_escaped = 0
         self.elapsed_time = 0.0
         self.battle_time = 0.0
         self.tutorial_until = 8.0
         self.result: str | None = None
         self.running = True
+        self._bgm_playing = False
 
     def run(self, max_frames: int | None = None) -> Level2Result:
         """Run the game and return the result required by shared_game_data."""
         frame_count = 0
+        self._start_bgm()
 
         if max_frames is None and self._tutorial_enabled() and not self._show_start_tutorial():
             self.running = False
@@ -103,9 +119,42 @@ class Level2Game:
                 if max_frames is not None and frame_count >= max_frames:
                     self.running = False
         finally:
+            self._stop_bgm()
             self.hand_controller.close()
             pygame.quit()
         return self._build_result()
+
+    def _start_bgm(self) -> None:
+        """Start the Level 2 track and loop it for the whole level session."""
+        if self._bgm_playing:
+            return
+
+        bgm_path = next((path for path in self._BGM_CANDIDATES if path.is_file()), None)
+        if bgm_path is None:
+            return
+
+        try:
+            if pygame.mixer.get_init() is None:
+                pygame.mixer.init()
+            pygame.mixer.music.load(str(bgm_path))
+            pygame.mixer.music.set_volume(0.55)
+            pygame.mixer.music.play(-1)
+        except pygame.error:
+            # Audio is optional so the game remains playable on machines with
+            # no audio device or without an MP3 decoder.
+            self._bgm_playing = False
+            return
+        self._bgm_playing = True
+
+    def _stop_bgm(self) -> None:
+        """Stop the Level 2 track before pygame shuts down."""
+        if not self._bgm_playing:
+            return
+        try:
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+        self._bgm_playing = False
 
     @staticmethod
     def _tutorial_enabled() -> bool:
@@ -123,38 +172,38 @@ class Level2Game:
                     if event.key in (pygame.K_ESCAPE, pygame.K_q):
                         return False
 
+            # Hide the in-game corner hint while the full start notice is on
+            # screen; otherwise the two instruction cards compete visually.
+            tutorial_until = self.tutorial_until
+            self.tutorial_until = 0.0
             self._draw()
-            overlay = pygame.Surface((820, 210), pygame.SRCALPHA)
-            overlay.fill((12, 25, 19, 232))
-            pygame.draw.rect(overlay, PALETTE["gold"], overlay.get_rect(), 3)
-            pygame.draw.rect(overlay, PALETTE["panel_light"], (3, 3, 814, 4))
-            title = self.font.render("LEVEL 2  |  PLANT GUARDIAN", False, (255, 222, 96))
-            body = self.small_font.render(
-                "W/S or arrow keys move between rails. Press H to enable hand control.",
-                False,
-                TEXT_COLOR,
+            self.tutorial_until = tutorial_until
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((18, 31, 20, 92))
+            self.screen.blit(overlay, (0, 0))
+            panel = pygame.Rect(214, 150, 852, 430)
+            content = draw_stardew_tutorial_panel(
+                self.screen,
+                panel,
+                title="FIELD NOTICE  /  LEVEL 2",
+                subtitle="Protect the farmhouse from two waves of hungry pests",
+                accent=(111, 165, 78),
             )
-            hint = self.small_font.render(
-                "Destroy both zombie waves before they reach the house.",
-                False,
-                (181, 224, 205),
+            body_lines = (
+                "W / S   or   ARROW KEYS     MOVE BETWEEN LANES",
+                "H                         TOGGLE HAND CONTROL",
+                "DEFEAT BOTH WAVES         BEFORE THEY REACH THE HOUSE",
             )
-            start = self.small_font.render(
-                "Press ENTER or SPACE to start  |  ESC to quit",
-                False,
-                (255, 220, 92),
+            for index, line in enumerate(body_lines):
+                text = self.small_font.render(line, False, (91, 61, 37))
+                self.screen.blit(text, text.get_rect(center=(WINDOW_WIDTH // 2, content.top + 26 + index * 42)))
+            draw_stardew_action_ribbon(
+                self.screen,
+                pygame.Rect(450, 486, 380, 42),
+                "ENTER  /  START DEFENSE",
             )
-            overlay.blit(title, (24, 24))
-            overlay.blit(body, (24, 78))
-            overlay.blit(hint, (24, 112))
-            overlay.blit(start, (24, 166))
-            self.screen.blit(
-                overlay,
-                (
-                    WINDOW_WIDTH // 2 - overlay.get_width() // 2,
-                    WINDOW_HEIGHT // 2 - overlay.get_height() // 2,
-                ),
-            )
+            escape = self.small_font.render("ESC  /  RETURN TO FARM", False, (117, 82, 49))
+            self.screen.blit(escape, escape.get_rect(center=(WINDOW_WIDTH // 2, 550)))
             pygame.display.flip()
             self.clock.tick(30)
 
@@ -191,14 +240,15 @@ class Level2Game:
         elif hand_action == "down":
             self.player.move_down()
 
-        spawn_lane = self.wave_manager.update(dt, len(self.zombies))
+        spawn_lane = self.wave_manager.update(dt, len(self.pests))
         if spawn_lane is not None:
             speed_multiplier = self.difficulty.zombie_speed_multiplier * (
                 1.0 + self.wave_manager.wave_index * 0.2
             )
-            self.zombies.add(
-                Zombie(
+            self.pests.add(
+                Pest(
                     spawn_lane,
+                    pest_type=self.wave_manager.last_spawn_type,
                     speed_multiplier=speed_multiplier,
                     health_multiplier=self.difficulty.zombie_hp_multiplier,
                 )
@@ -206,7 +256,9 @@ class Level2Game:
 
         self.attack_timer -= dt
         target_in_lane = any(
-            zombie.lane_index == self.player.lane_index for zombie in self.zombies
+            pest.lane_index == self.player.lane_index
+            and pest.can_be_hit_by_ground_attack
+            for pest in self.pests
         )
         if target_in_lane and self.attack_timer <= 0:
             projectile_count = int(self.attack_config["projectile_count"])
@@ -232,41 +284,102 @@ class Level2Game:
                 )
             self.attack_timer = float(self.attack_config["cooldown"])
 
-        self.zombies.update(dt)
+        self.pests.update(dt)
+        self._advance_aphid_lifecycles()
         self.projectiles.update(dt)
         self._resolve_projectile_hits()
 
-        escaped = [zombie for zombie in self.zombies if zombie.rect.left <= ZOMBIE_GOAL_X]
+        escaped = [pest for pest in self.pests if pest.escaped]
         if escaped:
             self.zombies_escaped += len(escaped)
+            self.pests_escaped += len(escaped)
             self.result = "DEFEAT"
-        elif self.wave_manager.finished and not self.zombies:
+        elif self.wave_manager.finished and not self.pests:
             self.result = "VICTORY"
+
+    def _advance_aphid_lifecycles(self) -> None:
+        """Hatch eggs and mature nymphs without waiting for a new wave."""
+        additions: list[Pest] = []
+        for pest in list(self.pests):
+            if pest.should_hatch():
+                pest.kill()
+                additions.append(self._replace_aphid_stage(pest, "nymph"))
+            elif pest.should_mature():
+                pest.kill()
+                additions.append(self._replace_aphid_stage(pest, "adult"))
+        if additions:
+            self.pests.add(*additions)
+
+    def _replace_aphid_stage(self, pest: Pest, stage: str) -> Pest:
+        """Change an aphid's stage while preserving its exact world position."""
+        replacement = Pest(
+            pest.lane_index,
+            pest_type="aphid",
+            speed_multiplier=self.difficulty.zombie_speed_multiplier,
+            health_multiplier=self.difficulty.zombie_hp_multiplier,
+            stage=stage,
+        )
+        # Stage transitions are growth, not new spawns: the egg, nymph, and
+        # adult must occupy the same patch of grass throughout the lifecycle.
+        replacement.precise_x = pest.precise_x
+        replacement.precise_y = pest.precise_y
+        replacement.rect.midbottom = (
+            round(replacement.precise_x),
+            lane_center_y(replacement.lane_index),
+        )
+        return replacement
 
     def _resolve_projectile_hits(self) -> None:
         collisions = pygame.sprite.groupcollide(
-            self.zombies,
+            self.pests,
             self.projectiles,
             False,
             False,
             collided=pygame.sprite.collide_rect,
         )
-        for zombie, projectiles in collisions.items():
+        for pest, projectiles in collisions.items():
+            if not pest.can_be_hit_by_ground_attack:
+                continue
             new_hits = [
                 projectile
                 for projectile in projectiles
-                if projectile.can_hit(zombie)
+                if projectile.can_hit(pest)
             ]
             if not new_hits:
                 continue
             damage = sum(projectile.damage for projectile in new_hits)
             for projectile in new_hits:
-                projectile.register_hit(zombie)
-            if zombie.take_damage(damage):
+                projectile.register_hit(pest)
+            if pest.take_damage(damage):
                 self.zombies_defeated += 1
+                self.pests_defeated += 1
+                if pest.is_aphid_adult:
+                    self._spawn_aphid_eggs(pest)
+
+    def _spawn_aphid_eggs(self, adult: Pest) -> None:
+        """Burst an adult aphid into two eggs on nearby lanes."""
+        lanes = [adult.lane_index]
+        if adult.lane_index > 0:
+            lanes.append(adult.lane_index - 1)
+        if adult.lane_index < LANE_COUNT - 1:
+            lanes.append(adult.lane_index + 1)
+        eggs: list[Pest] = []
+        for index in range(2):
+            egg = Pest(
+                lanes[index % len(lanes)],
+                pest_type="aphid",
+                speed_multiplier=self.difficulty.zombie_speed_multiplier,
+                health_multiplier=self.difficulty.zombie_hp_multiplier,
+                stage="egg",
+            )
+            egg.precise_x = adult.precise_x + 18 + index * 20
+            egg.rect.centerx = round(egg.precise_x)
+            eggs.append(egg)
+        self.pests.add(*eggs)
+        self.wave_manager.register_spawned_pests(len(eggs))
 
     def _reset_battle(self) -> None:
-        self.zombies.empty()
+        self.pests.empty()
         self.projectiles.empty()
         self.wave_manager = WaveManager(
             count_multiplier=self.difficulty.zombie_count_multiplier
@@ -274,6 +387,8 @@ class Level2Game:
         self.player.move_to_lane(LANE_COUNT // 2)
         self.zombies_defeated = 0
         self.zombies_escaped = 0
+        self.pests_defeated = 0
+        self.pests_escaped = 0
         self.attack_timer = 0.0
         self.battle_time = 0.0
         self.result = None
@@ -286,9 +401,10 @@ class Level2Game:
         self._draw_foreground_fence()
         self._draw_hand_target()
         self.projectiles.draw(self.screen)
-        self.zombies.draw(self.screen)
-        for zombie in self.zombies:
-            zombie.draw_health_bar(self.screen)
+        self._draw_pest_shadows()
+        self.pests.draw(self.screen)
+        for pest in self.pests:
+            pest.draw_health_bar(self.screen)
         self.player.draw(self.screen)
         self._draw_hud()
         if self.elapsed_time < self.tutorial_until and self.result is None:
@@ -347,6 +463,16 @@ class Level2Game:
         else:
             self.screen.fill(BACKGROUND_COLOR)
 
+    def _draw_pest_shadows(self) -> None:
+        """Paint soft pixel shadows beneath grounded pests before sprites."""
+        for pest in self.pests:
+            if pest.flying or pest.is_aphid_egg:
+                continue
+            shadow_width = max(12, min(52, pest.rect.width - 12))
+            shadow = pygame.Surface((shadow_width, 8), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow, (35, 63, 37, 88), shadow.get_rect())
+            self.screen.blit(shadow, shadow.get_rect(midtop=(pest.rect.centerx, pest.rect.bottom - 3)))
+
     def _draw_hud_legacy_old(self) -> None:
         pygame.draw.rect(self.screen, PALETTE["deep_ink"], (0, 0, WINDOW_WIDTH, BATTLEFIELD_TOP))
         pygame.draw.rect(self.screen, HUD_COLOR, (0, 4, WINDOW_WIDTH, BATTLEFIELD_TOP - 8))
@@ -360,7 +486,7 @@ class Level2Game:
         )
         lane_text = self.font.render(
             f"WAVE {min(self.wave_manager.wave_number, len(self.wave_manager.wave_counts))}/"
-            f"{len(self.wave_manager.wave_counts)}    KILLS {self.zombies_defeated}    "
+            f"{len(self.wave_manager.wave_counts)}    PESTS CLEARED {self.zombies_defeated}    "
             f"LANE {self.player.lane_index + 1}/{LANE_COUNT}    {self.difficulty.name.upper()}",
             False,
             (255, 220, 92),
@@ -410,7 +536,7 @@ class Level2Game:
         )
         lane_text = self.font.render(
             f"WAVE {min(self.wave_manager.wave_number, len(self.wave_manager.wave_counts))}/"
-            f"{len(self.wave_manager.wave_counts)}    KILLS {self.zombies_defeated}    "
+            f"{len(self.wave_manager.wave_counts)}    PESTS CLEARED {self.zombies_defeated}    "
             f"LANE {self.player.lane_index + 1}/{LANE_COUNT}    {self.difficulty.name.upper()}",
             False,
             (255, 220, 92),
@@ -451,7 +577,7 @@ class Level2Game:
         )
         lane_text = self.font.render(
             f"WAVE {min(self.wave_manager.wave_number, len(self.wave_manager.wave_counts))}/"
-            f"{len(self.wave_manager.wave_counts)}    KILLS {self.zombies_defeated}    "
+            f"{len(self.wave_manager.wave_counts)}    PESTS CLEARED {self.zombies_defeated}    "
             f"LANE {self.player.lane_index + 1}/{LANE_COUNT}    {self.difficulty.name.upper()}",
             False,
             (255, 220, 92),
@@ -753,22 +879,37 @@ class Level2Game:
         }.get(self.hand_controller.status, self.hand_controller.status.upper())
 
     def _draw_result_overlay(self) -> None:
+        """Show a warm farm report when the second level ends."""
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((12, 25, 19, 205))
+        overlay.fill((18, 31, 20, 112))
         self.screen.blit(overlay, (0, 0))
 
-        color = (255, 222, 96) if self.result == "VICTORY" else (235, 104, 85)
-        card = pygame.Rect(330, 260, 620, 170)
-        draw_pixel_panel(self.screen, card, fill=PALETTE["panel"], border=color, accent=color)
-        result_text = self.font.render(self.result, False, color)
-        restart_text = self.small_font.render("Press R to restart or ESC to quit", False, TEXT_COLOR)
-        self.screen.blit(
-            result_text,
-            result_text.get_rect(center=(WINDOW_WIDTH // 2, 310)),
+        victory = self.result == "VICTORY"
+        color = (91, 137, 68) if victory else (172, 83, 56)
+        panel = pygame.Rect(250, 180, 780, 330)
+        content = draw_stardew_tutorial_panel(
+            self.screen,
+            panel,
+            title=f"FIELD REPORT  /  {self.result}",
+            subtitle=(
+                "Both pest waves have been cleared"
+                if victory
+                else "A pest reached the farmhouse"
+            ),
+            accent=(111, 165, 78) if victory else (196, 104, 70),
         )
-        self.screen.blit(
-            restart_text,
-            restart_text.get_rect(center=(WINDOW_WIDTH // 2, 370)),
+        report = self.small_font.render(
+            f"WAVES  {self.wave_manager.wave_number}/{len(self.wave_manager.wave_counts)}"
+            f"     PESTS CLEARED  {self.zombies_defeated}",
+            False,
+            (91, 61, 37),
+        )
+        self.screen.blit(report, report.get_rect(center=(WINDOW_WIDTH // 2, content.top + 34)))
+        draw_stardew_action_ribbon(
+            self.screen,
+            pygame.Rect(450, 420, 380, 40),
+            "R  /  RESTART     ESC  /  EXIT",
+            fill=color,
         )
 
     def _build_result(self) -> Level2Result:

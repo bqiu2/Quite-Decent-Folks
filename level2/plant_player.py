@@ -53,7 +53,7 @@ class PlantPlayer(pygame.sprite.Sprite):
             self.rect.centery -= round(maximum_step)
 
     def _render_image(self) -> None:
-        """Create an original code-drawn sprite for the detected plant type."""
+        """Render the selected reference-inspired plant sprite."""
         surface = self.image
         surface.fill((0, 0, 0, 0))
         draw_pixel_plant(surface, (PLANT_SIZE // 2, 43), self.plant_type, scale=1)
