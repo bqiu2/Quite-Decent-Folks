@@ -1,0 +1,12 @@
+{
+    "plant_id": "PLANT_0034",
+    "plant_type": "flower",
+    "initial_power": 29.17,
+    "final_power": 50.06,
+    "level1_score": 0.0,
+    "level2_score": 67.67,
+    "difficulty": "hard",
+    "difficulty_multiplier": 1.5,
+    "final_score": 47.95,
+    "victory": false
+}
