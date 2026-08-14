@@ -36,6 +36,8 @@ from .config import (
     WINDOW_WIDTH,
     RANDOM_ITEM_X_OFFSET,
     PLATFORM_ITEM_LOOKAHEAD,
+    RUNNER_FRAME_COUNT,
+    RUNNER_FRAME_DURATION,
     scroll_speed_at,
 )
 from .items import (
@@ -137,6 +139,12 @@ class Level1Game:
         self.items = ItemManager(random.Random(), randomized_layout=True)
 
         self.elapsed = 0.0
+        # Keep animation time in the simulation rather than deriving a frame
+        # from the wall-clock render time.  This gives every left/right leg
+        # pose the same duration even when a frame takes slightly longer to
+        # render.
+        self.runner_frame = 0
+        self.runner_frame_elapsed = 0.0
         self.power_before = plant.current_power
         self.initial_status = _status_snapshot(plant.status)
         self.pest_hits = 0
@@ -190,10 +198,24 @@ class Level1Game:
             platforms=platforms,
         )
         self.player.update(dt, platforms)
+        self._advance_runner_animation(dt)
         self._resolve_collisions()
 
         if self.elapsed >= TIME_LIMIT or self.player.hp <= 0:
             self.finished = True
+
+    def _advance_runner_animation(self, dt: float) -> None:
+        """Advance the grounded run cycle in equal-duration pose steps."""
+        if not self.player.grounded or self.player.crouching:
+            return
+
+        self.runner_frame_elapsed += dt
+        frame_steps = int(self.runner_frame_elapsed / RUNNER_FRAME_DURATION)
+        if frame_steps <= 0:
+            return
+
+        self.runner_frame_elapsed -= frame_steps * RUNNER_FRAME_DURATION
+        self.runner_frame = (self.runner_frame + frame_steps) % RUNNER_FRAME_COUNT
 
     def _reject_clumped_obstacles(
         self,
@@ -426,9 +448,7 @@ class Level1Game:
             surface,
             self.player.rect,
             self.plant.plant_type,
-            # The refined sixteen-frame cycle is sampled at 16 fps for a smoother
-            # stride while the simulation itself continues at the target FPS.
-            running_frame=round(self.elapsed * 16),
+            running_frame=self.runner_frame,
             crouching=self.player.crouching,
             jumping=not self.player.grounded,
         )

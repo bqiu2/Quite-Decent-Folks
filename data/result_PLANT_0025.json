@@ -1,0 +1,12 @@
+{
+    "plant_id": "PLANT_0025",
+    "plant_type": "grass",
+    "initial_power": 85.07,
+    "final_power": 85.2,
+    "level1_score": 0.0,
+    "level2_score": 14.0,
+    "difficulty": "hard",
+    "difficulty_multiplier": 1.5,
+    "final_score": 57.34,
+    "victory": false
+}

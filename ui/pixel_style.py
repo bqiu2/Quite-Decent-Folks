@@ -39,8 +39,10 @@ PALETTE = {
 _STARDew_MENU_BACKGROUND: pygame.Surface | None = None
 _STARDew_MENU_SCALED: dict[tuple[int, int], pygame.Surface] = {}
 _PLANT_ASSET_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
-_RUNNER_ASSET_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
+_RUNNER_ASSET_CACHE: dict[tuple[str, int, tuple[int, int]], pygame.Surface | None] = {}
 _RUNNER_SHEET_CACHE: dict[str, tuple[tuple[pygame.Surface, ...], tuple[int, int]]] = {}
+_RUNNER_REFERENCE_HEIGHT_CACHE: dict[str, int] = {}
+_RUNNER_RENDER_HEIGHT = 96
 
 STATUS_KEYS = ("water", "light", "nitrogen", "phosphorus", "potassium", "pest")
 STATUS_LABELS = ("WATER", "LIGHT", "N", "P", "K", "PEST")
@@ -451,10 +453,20 @@ def _load_runner_asset(
     *,
     run_cycle: bool = False,
 ) -> pygame.Surface | None:
-    """Load one full-body farmer pose carrying the selected potted plant."""
+    """Load one farmer pose at a shared source-pixel scale.
+
+    The dedicated jump/crouch images have different transparent bounds.  Fit
+    scaling each cropped image to the same box makes the shorter poses look
+    larger.  Their scale is therefore based on the standing pose's source
+    height, while the pose itself is still allowed to be naturally shorter.
+    """
     plant_key = plant_type.lower()
     frame_key = max(0, min(15 if run_cycle else 3, int(frame)))
-    key = (f"{plant_key}_run" if run_cycle else plant_key, frame_key)
+    key = (
+        f"{plant_key}_run" if run_cycle else plant_key,
+        frame_key,
+        (int(target_size[0]), int(target_size[1])),
+    )
     if key in _RUNNER_ASSET_CACHE:
         cached = _RUNNER_ASSET_CACHE[key]
         return cached.copy() if cached is not None else None
@@ -477,9 +489,12 @@ def _load_runner_asset(
             return None
 
     if run_cycle and plant_key not in _RUNNER_SHEET_CACHE:
-        # The refined sheet is a 4x4 grid.  Extract every pose once, then
-        # place all poses on one shared canvas.  This prevents per-frame
-        # alpha bounds from changing the runner's apparent height or stride.
+        # The refined sheet is a 4x4 grid.  Extract every pose once and keep
+        # the source-cell coordinates until all frames have been inspected.
+        # Cropping each pose independently makes a long left-leg stride move
+        # the whole runner sideways because its alpha bounding box is wider.
+        # A shared union canvas keeps the torso fixed while the left and right
+        # legs take turns landing.
         columns = 4
         rows = 4
         extracted: list[pygame.Surface] = []
@@ -503,33 +518,54 @@ def _load_runner_asset(
             ).copy()
 
             # Remove any isolated edge pixels that were accidentally painted
-            # into a neighbouring cell by the image generator.
+            # into a neighbouring cell by the image generator.  Keep every
+            # meaningful component, though: a detached boot or hand is a
+            # legitimate part of a running pose and must not disappear just
+            # because the torso is the largest connected component.
             mask = pygame.mask.from_surface(frame_image, 1)
             components = mask.connected_components()
             if components:
                 main_component = max(components, key=lambda component: component.count())
+                minimum_component_pixels = max(8, round(mask.count() * 0.0005))
+                meaningful_components = {
+                    id(component)
+                    for component in components
+                    if component is main_component
+                    or component.count() >= minimum_component_pixels
+                }
+                meaningful_mask = pygame.mask.Mask(frame_image.get_size())
+                for component in components:
+                    if id(component) in meaningful_components:
+                        meaningful_mask.draw(component, (0, 0))
                 cleaned = pygame.Surface(frame_image.get_size(), pygame.SRCALPHA)
                 for pixel_y in range(frame_image.get_height()):
                     for pixel_x in range(frame_image.get_width()):
-                        if main_component.get_at((pixel_x, pixel_y)):
+                        if meaningful_mask.get_at((pixel_x, pixel_y)):
                             cleaned.set_at((pixel_x, pixel_y), frame_image.get_at((pixel_x, pixel_y)))
                 frame_image = cleaned
 
-            bounds = frame_image.get_bounding_rect(min_alpha=1)
-            if bounds.width and bounds.height:
-                frame_image = frame_image.subsurface(bounds).copy()
             extracted.append(frame_image)
 
-        canvas_width = max(frame.get_width() for frame in extracted)
-        canvas_height = max(frame.get_height() for frame in extracted)
+        union_bounds: pygame.Rect | None = None
+        for frame_image in extracted:
+            bounds = frame_image.get_bounding_rect(min_alpha=1)
+            if not bounds.width or not bounds.height:
+                continue
+            union_bounds = bounds.copy() if union_bounds is None else union_bounds.union(bounds)
+
+        if union_bounds is None:
+            union_bounds = pygame.Rect(0, 0, extracted[0].get_width(), extracted[0].get_height())
+
+        canvas_width = union_bounds.width
+        canvas_height = union_bounds.height
         normalized: list[pygame.Surface] = []
         for frame_image in extracted:
             frame_canvas = pygame.Surface((canvas_width, canvas_height), pygame.SRCALPHA)
             frame_canvas.blit(
                 frame_image,
                 (
-                    (canvas_width - frame_image.get_width()) // 2,
-                    canvas_height - frame_image.get_height(),
+                    -union_bounds.left,
+                    -union_bounds.top,
                 ),
             )
             normalized.append(frame_canvas)
@@ -540,7 +576,16 @@ def _load_runner_asset(
         bounds = image.get_bounding_rect(min_alpha=1)
         if bounds.width and bounds.height:
             image = image.subsurface(bounds).copy()
-    ratio = min(target_size[0] / image.get_width(), target_size[1] / image.get_height())
+    if run_cycle:
+        # The normalized run sheet already has one shared canvas for all
+        # sixteen frames, so its canvas height is the stable scale reference.
+        ratio = min(target_size[0] / image.get_width(), target_size[1] / image.get_height())
+    else:
+        reference_height = _runner_reference_height(plant_key)
+        # Match the dedicated pose to the standing pose's source-pixel scale;
+        # do not enlarge a crouch or jump merely because its silhouette is
+        # shorter.
+        ratio = target_size[1] / reference_height
     scaled_size = (
         max(1, round(image.get_width() * ratio)),
         max(1, round(image.get_height() * ratio)),
@@ -548,6 +593,29 @@ def _load_runner_asset(
     scaled = pygame.transform.scale(image, scaled_size)
     _RUNNER_ASSET_CACHE[key] = scaled
     return scaled.copy()
+
+
+def _runner_reference_height(plant_key: str) -> int:
+    """Return the visible source height of the standing runner pose."""
+    cached = _RUNNER_REFERENCE_HEIGHT_CACHE.get(plant_key)
+    if cached is not None:
+        return cached
+
+    asset_path = Path(__file__).resolve().parents[1] / "assets" / "runner" / f"{plant_key}_0.png"
+    try:
+        image = pygame.image.load(str(asset_path))
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
+        else:
+            image = image.copy()
+        bounds = image.get_bounding_rect(min_alpha=1)
+        reference_height = max(1, bounds.height)
+    except (pygame.error, OSError):
+        # Keep the fallback usable if a generated asset is unavailable.
+        reference_height = 564
+
+    _RUNNER_REFERENCE_HEIGHT_CACHE[plant_key] = reference_height
+    return reference_height
 
 
 def draw_pixel_plant(
@@ -780,10 +848,13 @@ def draw_pixel_runner(
     else:
         pose = int(running_frame) % 16
         run_cycle = True
+    # All states use the standing render height.  The source-pixel reference
+    # above keeps crouch/jump silhouettes shorter without making their pixels
+    # larger than the normal running sprite.
     asset = _load_runner_asset(
         plant_type,
         pose,
-        (rect.width + 86, max(80, rect.height + 18)),
+        (rect.width + 86, _RUNNER_RENDER_HEIGHT),
         run_cycle=run_cycle,
     )
     if asset is not None:

@@ -9,6 +9,14 @@ WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
 TARGET_FPS = 60
 
+# The runner sheet contains sixteen chronological poses.  Fifteen animation
+# frames per second divides evenly into the normal 60 Hz render loop, so each
+# pose stays on screen for the same number of render ticks instead of the
+# alternating 3/4-tick cadence produced by a 16 FPS rounded index.
+RUNNER_FRAME_COUNT = 16
+RUNNER_ANIMATION_FPS = 15
+RUNNER_FRAME_DURATION = 1.0 / RUNNER_ANIMATION_FPS
+
 PLAYER_X = 130
 PLAYER_WIDTH = 42
 PLAYER_HEIGHT = 78

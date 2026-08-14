@@ -23,6 +23,8 @@ from level1.config import (
     MIN_OBSTACLE_INTERVAL,
     MIN_OBSTACLE_JITTER,
     OBSTACLE_MIN_CLEARANCE,
+    RUNNER_FRAME_COUNT,
+    RUNNER_FRAME_DURATION,
     SLIDE_OBSTACLE_HEIGHT,
     TIME_LIMIT,
     obstacle_cluster_chance_at,
@@ -37,6 +39,7 @@ from level1.map import ObstacleManager
 from level1.player import Player
 from vision.camera_pose_input import CameraPoseInput
 from vision.pose_control import GestureDebouncer, classify_landmarks
+from ui.pixel_style import _load_runner_asset
 
 
 def make_plant() -> PlantData:
@@ -112,6 +115,36 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(plant.initial_power, plant.current_power)
         self.assertEqual(plant.status.water, DEMO_STATUS["water"])
         self.assertEqual(plant.status.pest, DEMO_STATUS["pest"])
+
+
+class RunnerAnimationTests(unittest.TestCase):
+    def test_jump_and_crouch_keep_the_running_sprite_scale(self) -> None:
+        standing = _load_runner_asset("flower", 0, (128, 96), run_cycle=True)
+        jumping = _load_runner_asset("flower", 2, (128, 96))
+        crouching = _load_runner_asset("flower", 3, (128, 96))
+
+        self.assertIsNotNone(standing)
+        self.assertIsNotNone(jumping)
+        self.assertIsNotNone(crouching)
+        assert standing is not None
+        assert jumping is not None
+        assert crouching is not None
+        self.assertLessEqual(jumping.get_height(), standing.get_height())
+        self.assertLessEqual(crouching.get_height(), standing.get_height())
+
+    def test_runner_poses_use_equal_duration_and_wrap(self) -> None:
+        game = Level1Game(make_plant())
+        half_frame = RUNNER_FRAME_DURATION / 2.0
+
+        game._advance_runner_animation(half_frame)
+        self.assertEqual(game.runner_frame, 0)
+        game._advance_runner_animation(half_frame + 0.000001)
+        self.assertEqual(game.runner_frame, 1)
+
+        game._advance_runner_animation(
+            RUNNER_FRAME_DURATION * (RUNNER_FRAME_COUNT - 1) + 0.000001
+        )
+        self.assertEqual(game.runner_frame, 0)
 
 
 class AudioTests(unittest.TestCase):
